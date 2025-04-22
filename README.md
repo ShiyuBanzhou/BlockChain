@@ -1,4 +1,6 @@
 # 区块链网络安全
+## 运行指令
+mvn clean javafx:run
 ## 证书管理
 证书生成指令：
 > 在resources/ssl文件夹下用cmd执行以下指令
