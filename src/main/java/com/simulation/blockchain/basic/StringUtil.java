@@ -1,13 +1,13 @@
-package com.example.blockchain;
+package com.simulation.blockchain.basic;
 
 import java.security.MessageDigest;
+
 public class StringUtil {
-    // result = hash|sha256(string)
     public static String applySha256(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(input.getBytes("UTF-8"));
-            StringBuffer hexString = new StringBuffer();
+            StringBuilder hexString = new StringBuilder();
             for (byte b : hash) {
                 String hex = Integer.toHexString(0xff & b);
                 if (hex.length() == 1) hexString.append('0');
