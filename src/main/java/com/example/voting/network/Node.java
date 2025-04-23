@@ -19,9 +19,9 @@ import java.util.Set; // Import Set
 
 /**
  * Represents a node in the simulated blockchain network.
- * Includes node discovery logic.
+ * Includes enhanced node discovery logic distinguishing seed nodes.
  * 模拟区块链网络中的节点。
- * 包括节点发现逻辑。
+ * 包括区分种子节点的增强节点发现逻辑。
  */
 public class Node {
     private String nodeId;
@@ -32,8 +32,8 @@ public class Node {
     private TrustManager trustManager;
     private PublicKey caPublicKey;
     private X509CRL currentCRL;
-    private NetworkManager networkManager;
-    private boolean joinedNetwork = false; // Flag to indicate if node has joined 标记节点是否已加入
+    private NetworkService networkService;
+    private boolean joinedNetwork = false;
 
     /**
      * Constructor for Node. Node is not registered with NetworkManager here.
@@ -42,64 +42,101 @@ public class Node {
      * @param idChain       Reference to the identity blockchain. 对身份区块链的引用。
      * @param voteChain     Reference to the voting blockchain. 对投票区块链的引用。
      * @param caPublicKey   The public key of the trusted CA. 受信任 CA 的公钥。
-     * @param networkManager Reference to the network manager. 对网络管理器的引用。
+     * @param networkService Reference to the network service implementation. 对网络服务实现的引用。
      */
     public Node(String nodeId, IdentityBlockchain idChain, VotingBlockchain voteChain,
-                PublicKey caPublicKey, NetworkManager networkManager) {
+                PublicKey caPublicKey, NetworkService networkService) {
         this.nodeId = nodeId;
         this.identityChain = idChain;
         this.votingChain = voteChain;
         this.caPublicKey = caPublicKey;
-        this.networkManager = networkManager; // Store reference 存储引用
+        this.networkService = networkService;
         this.rsaKeyPair = KeyUtil.generateRSAKeyPair();
         this.trustManager = new TrustManager(nodeId);
         if (this.rsaKeyPair == null) {
             throw new RuntimeException("Failed to generate RSA key pair for node " + nodeId);
         }
-        // DO NOT register here anymore - registration happens in joinNetwork
-        // 不再在此处注册 - 注册发生在 joinNetwork 中
+        if (this.networkService != null) {
+            this.networkService.setMessageReceiver(this);
+        }
         SystemLogger.log("节点 " + nodeId + " 已创建 (尚未加入网络)。");
     }
 
     /**
      * Simulates the process of joining the network.
-     * Registers with the NetworkManager and discovers initial peers.
+     * Registers with the NetworkService and discovers initial peers based on seed node status.
      * 模拟加入网络的过程。
-     * 向 NetworkManager 注册并发现初始对等节点。
-     * @param seedNodeIds A set of known seed node IDs (can be empty if this IS a seed node). 已知种子节点 ID 的集合（如果这是种子节点，则可以为空）。
+     * 向 NetworkService 注册并根据种子节点状态发现初始对等节点。
+     * @param seedNodeIds A set of known seed node IDs. Should contain this node's ID if it's a seed.
+     * 一个已知种子节点 ID 的集合。如果此节点是种子节点，则应包含其 ID。
      */
     public void joinNetwork(Set<String> seedNodeIds) {
         if (joinedNetwork) {
             SystemLogger.log("节点 " + nodeId + " 已加入网络。");
             return;
         }
-        if (networkManager == null) {
-            SystemLogger.error("节点 " + nodeId + " 无法加入网络：NetworkManager 未设置。");
+        if (networkService == null) {
+            SystemLogger.error("节点 " + nodeId + " 无法加入网络：NetworkService 未设置。");
             return;
         }
 
-        SystemLogger.log("节点 " + nodeId + " 正在尝试加入网络...");
+        boolean isSeed = seedNodeIds != null && seedNodeIds.contains(this.nodeId);
+        SystemLogger.log("节点 " + nodeId + " 正在尝试加入网络... (是否种子节点: " + isSeed + ")");
 
-        // 1. Register self with the NetworkManager
-        // 1. 向 NetworkManager 注册自己
-        networkManager.registerNode(this);
+        // 1. Register self with the NetworkService
+        // 1. 向 NetworkService 注册自己
+        // Registration should happen regardless of seed status
+        // 无论种子状态如何都应进行注册
+        networkService.registerNode(this);
 
-        // 2. Discover peers (unless this is the only node or a seed node starting first)
-        // 2. 发现对等节点（除非这是唯一的节点或第一个启动的种子节点）
-        // In a real P2P system, would contact seeds. Here, we query the manager.
-        // 在真实的 P2P 系统中，会联系种子节点。这里我们查询管理器。
-        if (!seedNodeIds.contains(this.nodeId) || networkManager.getAllNodeIds().size() > 1) {
-            int maxPeersToDiscover = 5; // Example limit 示例限制
-            List<String> discoveredPeerIds = networkManager.getRandomPeerIds(this.nodeId, maxPeersToDiscover);
-            if (!discoveredPeerIds.isEmpty()) {
-                SystemLogger.log("节点 " + nodeId + " 发现了 " + discoveredPeerIds.size() + " 个对等节点: " + discoveredPeerIds);
-                // Optional: Store discovered peers locally or use them for direct communication later
-                // 可选：在本地存储发现的对等节点或稍后用于直接通信
+        // 2. Discover peers
+        // 2. 发现对等节点
+        // In a real P2P system:
+        // - If seed: Might wait for connections or actively ping known peers.
+        // - If not seed: Would contact seeds from the seedNodeIds list.
+        // In our simulation:
+        // - We query the NetworkService, which has global knowledge.
+        // - We log the *intent* based on seed status.
+        // 在真实的 P2P 系统中：
+        // - 如果是种子节点：可能会等待连接或主动 ping 已知对等节点。
+        // - 如果不是种子节点：将联系 seedNodeIds 列表中的种子节点。
+        // 在我们的模拟中：
+        // - 我们查询具有全局知识的 NetworkService。
+        // - 我们根据种子状态记录 *意图*。
+
+        int maxPeersToDiscover = 5; // How many peers to request 期望请求多少对等节点
+        List<String> discoveredPeerIds = null;
+
+        if (isSeed) {
+            // Seed node logic: Discover only if others might exist
+            // 种子节点逻辑：仅当可能存在其他节点时才发现
+            // We check if *any* other nodes are registered *before* us joining,
+            // but since registration happens just before this check, we check total size > 1.
+            // 我们检查在我们加入*之前*是否有*任何*其他节点已注册，
+            // 但由于注册发生在此检查之前，我们检查总大小是否 > 1。
+            if (networkService.getAllNodeIds().size() > 1) {
+                SystemLogger.log("节点 " + nodeId + " (种子节点) 正在发现现有对等节点...");
+                discoveredPeerIds = networkService.discoverPeers(this.nodeId, maxPeersToDiscover);
             } else {
-                SystemLogger.log("节点 " + nodeId + " 未发现其他对等节点（可能是第一个节点）。");
+                SystemLogger.log("节点 " + nodeId + " (种子节点) 是网络中的第一个节点，跳过发现。");
             }
         } else {
-            SystemLogger.log("节点 " + nodeId + " 是种子节点或第一个节点，跳过对等节点发现。");
+            // Non-seed node logic: Always try to discover from the network (simulating contacting seeds)
+            // 非种子节点逻辑：始终尝试从网络发现（模拟联系种子节点）
+            SystemLogger.log("节点 " + nodeId + " (非种子节点) 正在通过 NetworkService 发现对等节点 (模拟联系种子)...");
+            discoveredPeerIds = networkService.discoverPeers(this.nodeId, maxPeersToDiscover);
+        }
+
+        // Log discovered peers if any
+        // 如果有，记录发现的对等节点
+        if (discoveredPeerIds != null && !discoveredPeerIds.isEmpty()) {
+            SystemLogger.log("节点 " + nodeId + " 发现了 " + discoveredPeerIds.size() + " 个对等节点: " + discoveredPeerIds);
+            // TODO: Future enhancement - Store and use this peer list
+            // TODO: 未来增强 - 存储并使用此对等节点列表
+        } else if (!isSeed || networkService.getAllNodeIds().size() > 1) {
+            // Log if non-seed or seed (but not first) found no peers
+            // 如果非种子节点或种子节点（但不是第一个）未找到对等节点，则记录日志
+            SystemLogger.log("节点 " + nodeId + " 未发现其他对等节点。");
         }
 
         // 3. Mark as joined and potentially announce presence
@@ -109,15 +146,19 @@ public class Node {
 
         // Optional: Broadcast a "hello" or "join" message
         // 可选：广播 "hello" 或 "join" 消息
-        // broadcast("JOIN: Node " + nodeId + " is online.");
+        // Only broadcast join if not the very first node
+        // 仅当不是第一个节点时才广播加入消息
+        if (networkService.getAllNodeIds().size() > 1) {
+            broadcast("JOIN: Node " + nodeId + " is online.");
+        }
     }
 
-    // --- Getters and Key Management (unchanged) ---
+    // --- Getters and Key Management ---
     public String getId() { return nodeId; }
     public PublicKey getPublicKey() { return rsaKeyPair.getPublic(); }
     private PrivateKey getPrivateKey() { return rsaKeyPair.getPrivate(); }
     public PublicKey getCaPublicKey() { return caPublicKey; }
-    public TrustManager getTrustManager() { return trustManager; } // Added getter 添加了 getter
+    public TrustManager getTrustManager() { return trustManager; }
     public void updateCRL(X509CRL newCRL) { /* ... unchanged ... */
         if (newCRL != null) { try { newCRL.verify(this.caPublicKey); this.currentCRL = newCRL; } catch (Exception e) { SystemLogger.error("Node " + nodeId + ": Received invalid CRL. Ignoring."); e.printStackTrace(); } } else { SystemLogger.error("Node " + nodeId + ": Received null CRL."); } }
     public void receiveGroupKey(String encKey) { /* ... unchanged ... */
@@ -126,31 +167,31 @@ public class Node {
     // --- Communication Methods ---
     public void broadcast(String msg) {
         if (!joinedNetwork) { SystemLogger.error("节点 " + nodeId + " 无法广播：尚未加入网络。"); return; }
-        if (networkManager == null || groupKey == null || msg == null) { SystemLogger.error("Node " + nodeId + " broadcast prerequisites not met."); return; }
+        if (networkService == null || groupKey == null || msg == null) { SystemLogger.error("Node " + nodeId + " broadcast prerequisites not met."); return; }
         try {
             String signature = CryptoUtil.signSHA256withRSA(msg, getPrivateKey()); if (signature == null) { SystemLogger.error("Node " + nodeId + " failed signing for broadcast."); return; }
             String cipher = CryptoUtil.encryptAES(msg, groupKey); if (cipher == null) { SystemLogger.error("Node " + nodeId + " failed encrypting for broadcast."); return; }
-            networkManager.routeBroadcast(this.nodeId, signature, cipher);
+            NetworkMessage netMsg = new BasicNetworkMessage(this.nodeId, signature, cipher, "GROUP_MSG");
+            // SystemLogger.log("节点 " + nodeId + ": 准备广播消息: " + netMsg.getMessageType()); // Reduce noise 减少噪音
+            networkService.broadcast(netMsg);
         } catch (Exception e) { SystemLogger.error("Node " + nodeId + " error during broadcast prep: " + e.getMessage()); e.printStackTrace(); }
     }
 
     public void receiveMessage(String senderId, String signature, String cipher) {
-        // 1. Basic checks & Trust Check
+        // --- Logic remains the same ---
+        // --- 逻辑保持不变 ---
         if (senderId == null || signature == null || cipher == null) { SystemLogger.error(nodeId + ": Received invalid message components (sender=" + senderId + ")"); return; }
         if (!trustManager.isTrusted(senderId)) { SystemLogger.log(nodeId + ": Ignored message from untrusted node " + senderId + " (Score: " + String.format("%.1f", trustManager.getTrustScore(senderId)) + ")"); return; }
         if (groupKey == null || identityChain == null || caPublicKey == null) { SystemLogger.error(nodeId + ": Cannot process message from " + senderId + ": Missing prerequisites."); return; }
-        SystemLogger.log(nodeId + ": Received message from trusted sender " + senderId + ". Verifying...");
+        // SystemLogger.log(nodeId + ": Received message from trusted sender " + senderId + ". Verifying..."); // Reduce noise 减少噪音
 
-        // 2. Get Sender Certificate
         DigitalCertificate senderCertWrapper = identityChain.getCertificateForNode(senderId);
         if (senderCertWrapper == null || senderCertWrapper.getX509Certificate() == null) { SystemLogger.error(nodeId + ": Could not find certificate for sender " + senderId + ". Ignoring."); return; }
         X509Certificate senderCert = senderCertWrapper.getX509Certificate();
 
-        // 3. Verify Sender Certificate
         try { senderCert.verify(caPublicKey); senderCert.checkValidity(); }
         catch (Exception e) { SystemLogger.error(nodeId + ": Sender certificate verification failed for " + senderId + ". Reason: " + e.getMessage() + ". Ignoring."); trustManager.recordInvalidCertificate(senderId); return; }
 
-        // 4. Check CRL
         if (currentCRL != null) {
             if (currentCRL.isRevoked(senderCert)) {
                 X509CRLEntry revokedEntry = currentCRL.getRevokedCertificate(senderCert); String revocationDateStr = (revokedEntry != null) ? revokedEntry.getRevocationDate().toString() : "N/A";
@@ -159,15 +200,12 @@ public class Node {
             }
         } else { SystemLogger.error(nodeId + ": Warning - No CRL available for sender " + senderId); }
 
-        // 5. Decrypt Message
         String plain = CryptoUtil.decryptAES(cipher, groupKey);
         if (plain == null) { SystemLogger.error(nodeId + ": Failed to decrypt message from " + senderId + ". Ignoring."); trustManager.recordDecryptionFailure(senderId); return; }
 
-        // 6. Verify Signature
         PublicKey senderPubKey = senderCert.getPublicKey();
         if (!CryptoUtil.verifySHA256withRSA(plain, signature, senderPubKey)) { SystemLogger.error(nodeId + ": !!! INVALID SIGNATURE on message from " + senderId + ". Ignoring. !!!"); trustManager.recordInvalidSignature(senderId); return; }
 
-        // 7. Process Valid Message & Increase Trust
         SystemLogger.log(nodeId + ": Received VALID message from " + senderId + ": " + plain);
         trustManager.recordValidMessage(senderId);
         // Add message handling logic here
