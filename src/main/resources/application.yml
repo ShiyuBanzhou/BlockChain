@@ -1,0 +1,12 @@
+server:
+  port: 8090
+
+block:
+  ##设定哈希值前difficulty位都是0时,满足计算结果
+  difficulty: 4
+  ##当前节点p2pserver端口号
+  p2pport: 7001
+  ##要连接的节点地址
+  address: ws://10.21.2.1:7002
+
+
