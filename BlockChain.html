@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链操作页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        .button-group {
+            margin-bottom: 20px;
+        }
+
+        .button-group button {
+            margin-right: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .display-box {
+            width: 100%;
+            height: 170px;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 18px;
+        }
+
+        .display-box2 {
+            width: 100%;
+            height: 300px;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="button-group">
+            <button id="getCertificateBtn">获取证书</button>
+            <button id="createBlockchainBtn">创建创世块</button>
+            <button id="mineBtn">挖矿</button>
+            <button id="showNowBlockchain">当前节点区块链</button>
+            <button id="showBlockchainBtn">显示区块链</button>
+        </div>
+        <div class="display-box" id="displayBox1">显示框1</div>
+        <div class="display-box2" id="displayBox2">显示框2</div>
+    </div>
+
+    <script>
+        // 定义全局变量
+        const BASE_URL = 'http://127.0.0.1:8091';
+
+        // 获取证书按钮点击事件
+        document.getElementById('getCertificateBtn').addEventListener('click', function () {
+            fetch(`${BASE_URL}/ca`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('网络请求失败，状态码: ' + response.status);
+                    }
+                    return response.json(); // 解析JSON格式的响应
+                })
+                .then(data => {
+                    // 假设返回的是一个JSON对象（Map）
+                    let displayText = ''; // 用于存储最终的显示内容
+                    for (const key in data) {
+                        if (data.hasOwnProperty(key)) {
+                            displayText += `${key}: ${data[key]}\n`; // 以 key:value 格式拼接
+                        }
+                    }
+                    document.getElementById('displayBox1').innerText = displayText;
+                })
+                .catch(error => {
+                    document.getElementById('displayBox1').innerText = '获取证书失败: ' + error;
+                });
+        });
+
+        // 挖矿按钮点击事件
+        document.getElementById('mineBtn').addEventListener('click', function () {
+            fetch(`${BASE_URL}/mine`)
+                .then(response => response.text())
+                .then(data => {
+                    // 挖矿操作可能没有返回值，或者返回值不需要显示
+                    alert('挖矿操作已触发');
+                })
+                .catch(error => {
+                    alert('挖矿操作失败: ' + error);
+                });
+        });
+
+
+        // 显示当前区块链数据按钮点击事件
+        document.getElementById('showNowBlockchain').addEventListener('click', function () {
+            fetch(`${BASE_URL}/scan`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('网络请求失败，状态码: ' + response.status);
+                    }
+                    return response.json(); // 解析JSON格式的响应
+                })
+                .then(data => {
+                    // 假设返回的是一个数组，每个元素是一个Block对象
+                    let displayText = ''; // 用于存储最终的显示内容
+                    data.forEach(block => {
+                        displayText += `Block Index: ${block.index}\n`;
+                        displayText += `Hash: ${block.hash}\n`;
+                        displayText += `Previous Hash: ${block.previousHash}\n`;
+                        displayText += `Timestamp: ${new Date(block.timestamp).toISOString()}\n`;
+                        displayText += `Nonce: ${block.nonce}\n`;
+                        displayText += `Transactions:\n`;
+
+                        // 遍历每个Block中的Transactions
+                        block.transactions.forEach(transaction => {
+                            displayText += `  Transaction ID: ${transaction.id}\n`;
+                            displayText += `  Business Info: ${transaction.businessInfo}\n`;
+                        });
+
+                        displayText += '\n'; // 每个Block之间添加空行
+                    });
+
+                    document.getElementById('displayBox2').innerText = displayText;
+                })
+                .catch(error => {
+                    document.getElementById('displayBox2').innerText = '显示区块链失败: ' + error;
+                });
+        });
+
+        document.getElementById('createBlockchainBtn').addEventListener('click', function () {
+            fetch(`${BASE_URL}/create`)
+                .then(response => response.text())
+                .then(data => {
+                    alert('已创建');
+                })
+                .catch(error => {
+                    alert('操作失败: ' + error);
+                });
+        });
+
+        // 显示区块链按钮点击事件
+        document.getElementById('showBlockchainBtn').addEventListener('click', function () {
+            fetch(`${BASE_URL}/data`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('网络请求失败，状态码: ' + response.status);
+                    }
+                    return response.json(); // 解析JSON格式的响应
+                })
+                .then(data => {
+                    // 假设返回的是一个数组，每个元素是一个Transaction对象
+                    let displayText = ''; // 用于存储最终的显示内容
+                    data.forEach((transaction, index) => {
+                        displayText += `Transaction ID: ${transaction.id}\n`;
+                        displayText += `Business Info: ${transaction.businessInfo}\n`;
+
+                        // 每两个transaction之间添加一个空行
+                        if ((index + 1) % 2 === 0) {
+                            displayText += '\n'; // 添加一个空行
+                        }
+                    });
+                    document.getElementById('displayBox2').innerText = displayText;
+                })
+                .catch(error => {
+                    document.getElementById('displayBox2').innerText = '显示区块链失败: ' + error;
+                });
+        });
+    </script>
+</body>
+
+</html>
