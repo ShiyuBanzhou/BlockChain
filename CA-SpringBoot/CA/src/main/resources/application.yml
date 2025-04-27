@@ -1,0 +1,27 @@
+server:
+  port: 9065
+spring:
+  application:
+    name: CA
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  group-configs:
+    - group: 'default'
+      paths-to-match: '/**'
+      packages-to-scan: com.your.package.name
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+    swagger-model-name: ????
+  basic:
+    enable: true
+    username: user
+    password: 123456
