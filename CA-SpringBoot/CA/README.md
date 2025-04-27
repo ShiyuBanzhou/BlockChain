@@ -1,4 +1,4 @@
-证书获取和http接口信息
+# 证书获取和http接口信息
 请求路径 "/ca"
 请求方法 POST
 说明：获取用户指定参数的CA证书
@@ -15,6 +15,7 @@
 响应内容 ：rootCAString String CA根证书的Base64编码字符串
 
 
+# 证书认证
 证书认证函数位于com.bjut.ca.Util.CertificateValidator
 说明：
    （1） boolean validateCertificate(X509Certificate certificate, X509Certificate rootCertificate)
@@ -29,7 +30,7 @@
         rootCertificate 以Base64编码字符串格式的根证书内容
         如果证书有效且签名验证成功，则返回true；否则返回false
 
-
+# 相关函数
 /**
  将 PublicKey 对象转换为 Base64 编码的字符串
  @param publicKey 要转换的 PublicKey 对象
