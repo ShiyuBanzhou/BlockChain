@@ -19,12 +19,12 @@ public class CAImpl {
     /**
      * CA服务器的URL地址
       */
-    private static String caUrl="http://127.0.0.1:9065";
+    private static final String CA_URL ="http://127.0.0.1:9065";
 
     /**
      * 用户的可分辨名称(Distinguished Name)，用于在证书签名请求(CSR)中标识用户信息
      */
-    private static String userDN="CN=User, OU=User, O=00r, L=User, ST=User, C=User";
+    private static final String USER_DN ="CN=User, OU=User, O=00r, L=User, ST=User, C=User";
 
 
     // 存储证书对象
@@ -48,7 +48,7 @@ public class CAImpl {
      */
     public static X509Certificate getRootCertificate() throws Exception {
         if (rootCertificate == null) {
-            String meaaage = HttpRequestUtil.httpGet(caUrl + "/root-ca");
+            String meaaage = HttpRequestUtil.httpGet(CA_URL + "/root-ca");
             rootCertificate = CertificateValidator.stringToCertificate(meaaage);
             rootCertificateStr = meaaage;
         }
@@ -63,7 +63,7 @@ public class CAImpl {
      */
     public static String getRootCertificateStr() throws Exception {
         if (rootCertificateStr == null) {
-            String meaaage = HttpRequestUtil.httpGet(caUrl + "/root-ca");
+            String meaaage = HttpRequestUtil.httpGet(CA_URL + "/root-ca");
             rootCertificate = CertificateValidator.stringToCertificate(meaaage);
             rootCertificateStr = meaaage;
         }
@@ -104,8 +104,8 @@ public class CAImpl {
     public static void createCertificate() throws Exception {
         PublicKey userPublicKey = getKeyPair().getPublic();
         String userPublicKeyStr = PublicKeyUtil.publicKeyToString(userPublicKey);
-        String url = "userPublicKey=" + userPublicKeyStr + "&userDN=" + userDN;
-        String message = HttpRequestUtil.httpPostForm(url, caUrl + "/ca");
+        String url = "userPublicKey=" + userPublicKeyStr + "&userDN=" + USER_DN;
+        String message = HttpRequestUtil.httpPostForm(url, CA_URL + "/ca");
         certificateStr = message;
         certificate = CertificateValidator.stringToCertificate(message);
     }
@@ -144,7 +144,7 @@ public class CAImpl {
         certificateMap.put("serialNumber", certificate.getSerialNumber().toString());
         certificateMap.put("notBefore", certificate.getNotBefore().toString());
         certificateMap.put("notAfter", certificate.getNotAfter().toString());
-        certificateMap.put("publicKeyFormat", certificate.getPublicKey().getFormat());
+        //certificateMap.put("publicKeyFormat", certificate.getPublicKey().getFormat());
         // 返回 map 的 json 格式，用 fastjson
         return JSONObject.toJSONString(certificateMap);
     }
