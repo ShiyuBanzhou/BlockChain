@@ -45,6 +45,9 @@ public class P2PService implements ApplicationRunner {
 	 * @param sockets
 	 */
 	public void handleMessage(WebSocket webSocket, String msg, List<WebSocket> sockets) {
+		if(msg==null) {
+                   return;
+                }
 		try {
 			Message message = JSON.parseObject(msg, Message.class);
 			System.out.println("接收到IP地址为：" +webSocket.getRemoteSocketAddress().getAddress().toString()
