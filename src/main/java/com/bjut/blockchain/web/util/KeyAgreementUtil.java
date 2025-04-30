@@ -8,7 +8,7 @@ import java.util.Arrays;
 public class KeyAgreementUtil {
    
     @Getter
-    public static String keyAgreementValue;
+    public static String keyAgreementValue="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     /**
      * 执行密钥协议算法
