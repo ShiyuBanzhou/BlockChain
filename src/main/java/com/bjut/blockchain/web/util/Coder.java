@@ -3,6 +3,7 @@ package com.bjut.blockchain.web.util;
 import java.security.MessageDigest;
 import java.util.Base64;
 
+import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;

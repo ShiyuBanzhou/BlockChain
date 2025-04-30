@@ -1,5 +1,7 @@
 package com.bjut.blockchain.web.util;
 
+import com.bjut.blockchain.web.service.CAImpl;
+
 import java.io.ByteArrayInputStream;
 import java.security.*;
 import java.security.cert.*;
