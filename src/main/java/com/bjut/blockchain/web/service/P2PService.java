@@ -222,12 +222,20 @@ public class P2PService implements ApplicationRunner {
 
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
+		// 启动 P2P 服务器
 		p2PServer.initP2PServer(blockCache.getP2pport());
-		p2PClient.connectToPeer(blockCache.getAddress());
+
+		// 连接到配置的初始对等节点
+		List<String> initialPeers = blockCache.getInitialPeers(); // 获取地址列表
+		if (initialPeers != null) {
+			for (String peerAddress : initialPeers) { // 遍历列表
+				p2PClient.connectToPeer(peerAddress); // 尝试连接每个节点
+			}
+		}
+
 		System.out.println("*****难度系数******"+blockCache.getDifficulty());
 		System.out.println("*****端口号******"+blockCache.getP2pport());
-		System.out.println("*****节点地址******"+blockCache.getAddress());
-		
+		System.out.println("*****节点地址列表******"+blockCache.getInitialPeers()); // 输出地址列表
 	}
 	
 }

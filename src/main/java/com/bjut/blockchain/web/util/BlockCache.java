@@ -3,7 +3,6 @@ package com.bjut.blockchain.web.util;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.java_websocket.WebSocket;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import com.bjut.blockchain.web.model.Block;
@@ -31,28 +30,24 @@ public class BlockCache {
 	/**
 	 * 挖矿的难度系数
 	 */
-	@Value("${block.difficulty}")
 	private int difficulty;
 	
 	/**
 	 * 当前节点p2pserver端口号
 	 */
-	@Value("${block.p2pport}")
 	private int p2pport;
-	
+
 	/**
-	 * 要连接的节点地址
+	 * 要连接的初始节点地址列表
 	 */
-	@Value("${block.address}")
-	private String address;
+	private List<String> initialPeers; // 修改类型为 List<String>
 	
 	/**
 	 * 获取最新的区块，即当前链上最后一个区块
-	 * 
-	 * @return
-	 */
+	 *
+     */
 	public Block getLatestBlock() {
-		return blockChain.size() > 0 ? blockChain.get(blockChain.size() - 1) : null;
+		return !blockChain.isEmpty() ? blockChain.get(blockChain.size() - 1) : null;
 	}
 
 	public List<Block> getBlockChain() {
@@ -95,12 +90,12 @@ public class BlockCache {
 		this.p2pport = p2pport;
 	}
 
-	public String getAddress() {
-		return address;
+	public List<String> getInitialPeers() {
+		return initialPeers;
 	}
 
-	public void setAddress(String address) {
-		this.address = address;
+	public void setInitialPeers(List<String> initialPeers) { // 修改 setter
+		this.initialPeers = initialPeers;
 	}
 
 }

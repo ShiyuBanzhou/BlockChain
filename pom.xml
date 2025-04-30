@@ -75,7 +75,7 @@
   </dependencies>
 
   <build>
-    <finalName>blockchain-node2</finalName>
+    <finalName>node3</finalName>
 
     <plugins>
       <plugin>
