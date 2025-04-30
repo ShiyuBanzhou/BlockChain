@@ -114,4 +114,67 @@ public abstract class Coder {
         return mac.doFinal(data);
 
     }
+
+
+      /**
+     * 使用AES算法加密明文
+     *
+     * @param plainText 明文字符串
+     * @param secretKeyStr 十六进制编码的密钥字符串
+     * @return 加密后的密文字符串，经过Base64编码
+     * @throws Exception 如果加密过程中发生错误
+     */
+    public static String encryptAES(String plainText, String secretKeyStr) throws Exception {
+        // 将十六进制编码的密钥字符串转换为字节数组
+        byte[] secretKeyBytes = hexStringToByteArray(secretKeyStr);
+        // 使用字节数组创建一个AES密钥
+        SecretKey secretKey = new SecretKeySpec(secretKeyBytes, "AES");
+        // 获取AES Cipher实例
+        Cipher cipher = Cipher.getInstance("AES");
+        // 初始化Cipher为加密模式
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+
+        // 使用Cipher加密明文并返回Base64编码的密文字符串
+        byte[] encryptedBytes = cipher.doFinal(plainText.getBytes("UTF-8"));
+        return Base64.getEncoder().encodeToString(encryptedBytes);
+    }
+
+    /**
+     * 使用AES算法解密密文
+     *
+     * @param encryptedText Base64编码的密文字符串
+     * @param secretKeyStr 十六进制编码的密钥字符串
+     * @return 解密后的明文字符串
+     * @throws Exception 如果解密过程中发生错误
+     */
+    public static String decryptAES(String encryptedText, String secretKeyStr) throws Exception {
+        // 将十六进制编码的密钥字符串转换为字节数组
+        byte[] secretKeyBytes = hexStringToByteArray(secretKeyStr);
+        // 使用字节数组创建一个AES密钥
+        SecretKey secretKey = new SecretKeySpec(secretKeyBytes, "AES");
+        // 获取AES Cipher实例
+        Cipher cipher = Cipher.getInstance("AES");
+        // 初始化Cipher为解密模式
+        cipher.init(Cipher.DECRYPT_MODE, secretKey);
+
+        // 使用Cipher解密密文并返回明文字符串
+        byte[] decryptedBytes = cipher.doFinal(Base64.getDecoder().decode(encryptedText));
+        return new String(decryptedBytes, "UTF-8");
+    }
+
+    /**
+     * 将十六进制字符串转换为字节数组
+     *
+     * @param hexString 十六进制字符串
+     * @return 字节数组
+     */
+    private static byte[] hexStringToByteArray(String hexString) {
+        int len = hexString.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hexString.charAt(i), 16) << 4)
+                    + Character.digit(hexString.charAt(i + 1), 16));
+        }
+        return data;
+    }
 }
