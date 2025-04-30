@@ -51,6 +51,14 @@ public class CertificateValidator {
             throw new RuntimeException(e);
         }
     }
+    
+    public static boolean validateCertificateByString(String certificate) {
+        try {
+            return validateCertificateByString(certificate, CAImpl.getRootCertificateStr());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
 
     /**
