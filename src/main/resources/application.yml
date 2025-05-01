@@ -1,6 +1,11 @@
 server:
   port: 8090 # 节点自身的HTTP服务端口
 
+
+spring:
+  aop:
+    proxy-target-class: true
+
 block:
   difficulty: 4
   p2pport: 7003 # 节点自身的P2P服务端口
