@@ -31,7 +31,7 @@ public class CryptoUtil {
 		return encodeStr;
 	}
 	
-	private static String byte2Hex(byte[] bytes) {
+	public static String byte2Hex(byte[] bytes) {
 		StringBuilder builder = new StringBuilder();
 		String temp;
 		for (int i = 0; i < bytes.length; i++) {

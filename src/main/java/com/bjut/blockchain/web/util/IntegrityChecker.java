@@ -26,6 +26,7 @@ public class IntegrityChecker {
             System.out.println("Stored SHA-256 hash: " + storedHash);
 
             // 计算当前 JAR 文件的 SHA-256 哈希值
+            //todo 修改jar包名称
             String calculatedHash = calculateJarSHA256("blockchain-node2.jar");
             System.out.println("Calculated SHA-256 hash: " + calculatedHash);
 

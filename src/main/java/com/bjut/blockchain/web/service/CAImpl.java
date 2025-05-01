@@ -116,14 +116,22 @@ public class CAImpl {
      * @return KeyPair 密钥对对象
      * @throws Exception 如果生成密钥对时发生错误
      */
-    public static KeyPair getKeyPair() throws Exception {
+    public static KeyPair getKeyPair(){
         if (keyPair == null) {
-            KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-            keyPairGenerator.initialize(2048);
-            keyPair = keyPairGenerator.generateKeyPair();
-            System.out.println("keyPair:"+keyPair);
+            createKeyPair();
         }
         return keyPair;
+    }
+
+    public static void createKeyPair() {
+        try{
+            KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+            keyPairGenerator.initialize(1024);
+            keyPair = keyPairGenerator.generateKeyPair();
+            System.out.println("keyPair:" + keyPair.toString());
+        }catch (Exception e){
+            System.out.println("createKeyPair is error:" + e.getMessage());
+        }
     }
 
 

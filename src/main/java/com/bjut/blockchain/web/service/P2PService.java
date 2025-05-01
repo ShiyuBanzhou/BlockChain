@@ -3,6 +3,10 @@ package com.bjut.blockchain.web.service;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+
+import com.bjut.blockchain.web.Aspect.BroadcastAspect;
+import com.bjut.blockchain.web.Aspect.HandleMessageAspect;
+import com.bjut.blockchain.web.util.KeyAgreementUtil;
 import org.java_websocket.WebSocket;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
@@ -38,6 +42,12 @@ public class P2PService implements ApplicationRunner {
 	@Autowired
 	P2PClient p2PClient;
 
+	@Autowired
+	NodeJoinAndQuit nodeJoinAndQuit;
+
+	@Autowired
+	KeyAgreementUtil keyAgreementUtil;
+
 	/**
 	 * 客户端和服务端共用的消息处理方法
 	 * @param webSocket
@@ -45,6 +55,7 @@ public class P2PService implements ApplicationRunner {
 	 * @param sockets
 	 */
 	public void handleMessage(WebSocket webSocket, String msg, List<WebSocket> sockets) {
+		msg= HandleMessageAspect.processMessage(msg);
 		if(msg==null) {
                    return;
                 }
@@ -70,6 +81,26 @@ public class P2PService implements ApplicationRunner {
 			case BlockConstant.RESPONSE_BLOCKCHAIN:
 				handleBlockChainResponse(message.getData(), sockets);
 				break;
+			//密钥交换:5
+			case BlockConstant.KEY_AGREEMENT:
+			    //todo 密钥交换
+				System.out.println("节点密钥交换"+message.getData());
+				keyAgreementUtil.agreementKey(message.getData());
+				break;
+			//节点退出：6
+			case BlockConstant.NODE_QUIT:
+				nodeJoinAndQuit.agreement();
+				break;
+			//派发密钥：7
+			case BlockConstant.DISTRIBUTE_KEY:
+			    //todo 分布式密钥
+				System.out.println("节点接收密钥"+message.getData());
+				if(KeyAgreementUtil.keyAgreementValue==null){
+					System.out.println("miaogengxin");
+					KeyAgreementUtil.keyAgreementValue=message.getData();
+				}
+				break;
+
 			}
 		} catch (Exception e) {
 			System.out.println("处理IP地址为：" +webSocket.getRemoteSocketAddress().getAddress().toString()
@@ -172,6 +203,7 @@ public class P2PService implements ApplicationRunner {
 	 * @param message
 	 */
 	public void write(WebSocket ws, String message) {
+		message= BroadcastAspect.processMessage(message);
 		System.out.println("发送给IP地址为：" +ws.getRemoteSocketAddress().getAddress().toString() 
 			+ "，端口号为："+ws.getRemoteSocketAddress().getPort() + " 的p2p消息:" + message);
 		ws.send(message);

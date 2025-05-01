@@ -2,6 +2,8 @@ package com.bjut.blockchain.websocket;
 
 import java.net.InetSocketAddress;
 
+import com.bjut.blockchain.web.service.NodeJoinAndQuit;
+import com.bjut.blockchain.web.util.KeyAgreementUtil;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
@@ -22,6 +24,11 @@ public class P2PServer {
 	@Autowired
 	P2PService p2pService;
 
+	@Autowired
+	NodeJoinAndQuit nodeJoinAndQuit;
+
+	public static int nodeNum=1;
+
 	public void initP2PServer(int port) {
 		WebSocketServer socketServer = new WebSocketServer(new InetSocketAddress(port)) {
 
@@ -31,6 +38,13 @@ public class P2PServer {
 			@Override
 			public void onOpen(WebSocket webSocket, ClientHandshake clientHandshake) {
 				p2pService.getSockets().add(webSocket);
+				nodeNum++;
+				if(nodeNum==2){
+					System.out.println("节点数量"+nodeNum);
+					nodeJoinAndQuit.agreement();
+				}else if(KeyAgreementUtil.keyAgreementValue!=null){
+					nodeJoinAndQuit.join();
+				}
 			}
 
 			/**
@@ -39,6 +53,10 @@ public class P2PServer {
 			@Override
 			public void onClose(WebSocket webSocket, int i, String s, boolean b) {
 				p2pService.getSockets().remove(webSocket);
+				nodeNum--;
+				System.out.println("关闭连接"+nodeNum);
+				nodeJoinAndQuit.agreement();
+
 				System.out.println("connection closed to address:" + webSocket.getRemoteSocketAddress());
 			}
 
@@ -57,6 +75,7 @@ public class P2PServer {
 			@Override
 			public void onError(WebSocket webSocket, Exception e) {
 				p2pService.getSockets().remove(webSocket);
+				e.printStackTrace();
 				System.out.println("connection failed to address:" + webSocket.getRemoteSocketAddress());
 			}
 

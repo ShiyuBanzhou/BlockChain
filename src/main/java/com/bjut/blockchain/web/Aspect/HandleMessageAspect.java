@@ -11,7 +11,7 @@ import org.aspectj.lang.annotation.Before;
 import org.aspectj.lang.annotation.Pointcut;
 import org.java_websocket.WebSocket;
 import org.springframework.stereotype.Component;
-import sun.rmi.runtime.Log;
+
 
 import java.util.List;
 @Aspect
@@ -23,22 +23,49 @@ public class HandleMessageAspect {
     public void handleMessagePointcut() {}
 
     // 使用@Around通知，在handleMessage方法执行前后执行
-    @Around("handleMessagePointcut() && args(webSocket, msg, sockets)")
+    //@Around("handleMessagePointcut() && args(webSocket, msg, sockets)")
     public void processMessage(ProceedingJoinPoint joinPoint, WebSocket webSocket, String msg, List<WebSocket> sockets) throws Throwable {
+        System.out.println("进入processMessage"+msg);
         try {
-
-            // 解密消息
-            msg = Coder.decryptAES(msg, KeyAgreementUtil.keyAgreementValue);
+            if(!msg.contains("*&*")){
+                // 解密消息
+                msg = Coder.decryptAES(msg, KeyAgreementUtil.keyAgreementValue);
+            }
             // 分割消息和证书
             String[] message = msg.split("\\*&\\*");
             // 验证证书
             if (CertificateValidator.validateCertificateByString(message[1])) {
                 // 如果证书验证通过，将处理后的消息赋值回方法参数
+                System.out.println("证书验证成功"+message[0]);
                 joinPoint.proceed(new Object[]{webSocket, message[0], sockets});
             } else {
                 // 如果证书验证失败，直接返回null
                 System.out.println("证书验证失败");
                 joinPoint.proceed(new Object[]{webSocket, null, sockets});
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Error processing message", e);
+        }
+    }
+
+
+    public static String processMessage(String msg) {
+        try {
+            if(!msg.contains("*&*")){
+                // 解密消息
+                msg = Coder.decryptAES(msg, KeyAgreementUtil.keyAgreementValue);
+            }
+            // 分割消息和证书
+            String[] message = msg.split("\\*&\\*");
+            // 验证证书
+            if (CertificateValidator.validateCertificateByString(message[1])) {
+                // 如果证书验证通过，将处理后的消息赋值回方法参数
+                System.out.println("证书验证成功"+message[0]);
+                return message[0];
+            } else {
+                // 如果证书验证失败，直接返回null
+                System.out.println("证书验证失败");
+                return null;
             }
         } catch (Exception e) {
             throw new RuntimeException("Error processing message", e);
