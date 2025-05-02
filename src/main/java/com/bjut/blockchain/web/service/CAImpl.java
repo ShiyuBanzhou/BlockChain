@@ -2,6 +2,7 @@ package com.bjut.blockchain.web.service;
 
 import com.alibaba.fastjson.JSONObject;
 import com.bjut.blockchain.web.util.CertificateValidator;
+import com.bjut.blockchain.web.util.CryptoUtil;
 import com.bjut.blockchain.web.util.HttpRequestUtil;
 import com.bjut.blockchain.web.util.PublicKeyUtil;
 import org.springframework.stereotype.Service;
@@ -128,7 +129,7 @@ public class CAImpl {
             KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
             keyPairGenerator.initialize(1024);
             keyPair = keyPairGenerator.generateKeyPair();
-            System.out.println("keyPair:" + keyPair.toString());
+            System.out.println("create PublicPair:" + CryptoUtil.byte2Hex(keyPair.getPublic().getEncoded()));
         }catch (Exception e){
             System.out.println("createKeyPair is error:" + e.getMessage());
         }

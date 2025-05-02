@@ -96,7 +96,6 @@ public class P2PService implements ApplicationRunner {
 			    //todo 分布式密钥
 				System.out.println("节点接收密钥"+message.getData());
 				if(KeyAgreementUtil.keyAgreementValue==null){
-					System.out.println("miaogengxin");
 					KeyAgreementUtil.keyAgreementValue=message.getData();
 				}
 				break;
