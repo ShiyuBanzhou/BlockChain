@@ -89,6 +89,7 @@ public class P2PService implements ApplicationRunner {
 				break;
 			//节点退出：6
 			case BlockConstant.NODE_QUIT:
+				System.out.println("节点退出 重新协商密钥");	
 				nodeJoinAndQuit.agreement();
 				break;
 			//派发密钥：7
