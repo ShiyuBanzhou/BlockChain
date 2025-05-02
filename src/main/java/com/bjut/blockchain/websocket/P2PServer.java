@@ -50,8 +50,10 @@ public class P2PServer {
 					nodeJoinAndQuit.agreement();
 				}else if(KeyAgreementUtil.keyAgreementValue!=null){
 					nodeJoinAndQuit.join();
+				}else{
+					sendPublicKey();
 				}
-				sendPublicKey();
+				
 			}
 
 			/**
@@ -62,7 +64,7 @@ public class P2PServer {
 				p2pService.getSockets().remove(webSocket);
 				nodeNum--;
 				System.out.println("关闭连接 剩余节点数量："+nodeNum);
-				nodeJoinAndQuit.agreement();
+				//nodeJoinAndQuit.agreement();
 				System.out.println("connection closed to address:" + webSocket.getRemoteSocketAddress());
 			}
 
