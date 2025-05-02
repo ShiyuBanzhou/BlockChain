@@ -1,8 +1,14 @@
 package com.bjut.blockchain.websocket;
 
 import java.net.InetSocketAddress;
+import java.security.PublicKey;
 
+import com.alibaba.fastjson.JSON;
+import com.bjut.blockchain.web.model.Message;
+import com.bjut.blockchain.web.service.CAImpl;
 import com.bjut.blockchain.web.service.NodeJoinAndQuit;
+import com.bjut.blockchain.web.util.BlockConstant;
+import com.bjut.blockchain.web.util.CryptoUtil;
 import com.bjut.blockchain.web.util.KeyAgreementUtil;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
@@ -39,12 +45,13 @@ public class P2PServer {
 			public void onOpen(WebSocket webSocket, ClientHandshake clientHandshake) {
 				p2pService.getSockets().add(webSocket);
 				nodeNum++;
+				System.out.println("节点数量:"+nodeNum);
 				if(nodeNum==2){
-					System.out.println("节点数量"+nodeNum);
 					nodeJoinAndQuit.agreement();
 				}else if(KeyAgreementUtil.keyAgreementValue!=null){
 					nodeJoinAndQuit.join();
 				}
+				sendPublicKey();
 			}
 
 			/**
@@ -54,9 +61,8 @@ public class P2PServer {
 			public void onClose(WebSocket webSocket, int i, String s, boolean b) {
 				p2pService.getSockets().remove(webSocket);
 				nodeNum--;
-				System.out.println("关闭连接"+nodeNum);
+				System.out.println("关闭连接 剩余节点数量："+nodeNum);
 				nodeJoinAndQuit.agreement();
-
 				System.out.println("connection closed to address:" + webSocket.getRemoteSocketAddress());
 			}
 
@@ -87,6 +93,17 @@ public class P2PServer {
 		};
 		socketServer.start();
 		System.out.println("listening websocket p2p port on: " + port);
+	}
+
+	public void sendPublicKey() {
+        try {
+            Thread.sleep(300);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        String publicKeyHex = CryptoUtil.byte2Hex(CAImpl.getKeyPair().getPublic().getEncoded());
+		Message message=new Message(BlockConstant.KEY_AGREEMENT,publicKeyHex);
+		p2pService.broatcast(JSON.toJSONString(message));
 	}
 
 }
