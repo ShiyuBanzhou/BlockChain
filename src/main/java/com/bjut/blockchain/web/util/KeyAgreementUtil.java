@@ -2,6 +2,7 @@ package com.bjut.blockchain.web.util;
 
 import com.bjut.blockchain.web.service.CAImpl;
 import com.bjut.blockchain.web.service.NodeJoinAndQuit;
+import com.bjut.blockchain.websocket.P2PServer;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -20,6 +21,9 @@ public class KeyAgreementUtil {
 
     @Autowired
     NodeJoinAndQuit nodeJoinAndQuit;
+
+    @Autowired
+    P2PServer p2pServer;
 
     private static CopyOnWriteArrayList<String> keyArray = new CopyOnWriteArrayList<>();
     private static Timer timer = new Timer(true);
@@ -58,14 +62,15 @@ public class KeyAgreementUtil {
         if (keyAgreementValue == null) {
             agreementKeyArray(key);
         } else {
-            nodeJoinAndQuit.agreement();
+            //nodeJoinAndQuit.agreement();
         }
     }
 
-    private static synchronized void agreementKeyArray(String key) {
+    private synchronized void agreementKeyArray(String key) {
         // 如果keyArray为空，开始计时
         if (keyArray.isEmpty()) {
             System.out.println("开始计时");
+            p2pServer.sendPublicKey();
             startTime = System.currentTimeMillis();
         }
 
@@ -80,7 +85,7 @@ public class KeyAgreementUtil {
                 public void run() {
                     //synchronized (KeyAgreementUtil.class) {
                         // 检查是否超时
-                        if (System.currentTimeMillis() - startTime >= 4000) {
+                        if (System.currentTimeMillis() - startTime >= 7500) {
                             System.out.println("开始密钥协商");
                             keyArray.add(CryptoUtil.byte2Hex(CAImpl.getKeyPair().getPublic().getEncoded()));
                             keyAgreement(keyArray.toArray(new String[0]));
@@ -93,7 +98,7 @@ public class KeyAgreementUtil {
                         }
                     //}
                 }
-            }, 4000);
+            }, 7500);
         }
     }
 
