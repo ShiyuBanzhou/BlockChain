@@ -16,6 +16,7 @@ public class DceBlockchainApplication {
     private NodeJoinAndQuit nodeJoinAndQuit;
 
     public static void main(String[] args) {
+        //XXX： 删除true会启动时进行代码完整性检查 请确保使用Java -jar运行 且IntegrityChecker文件和py文件的jar包名相同
         if (true || IntegrityChecker.verifyIntegrity()) {
             System.out.println("Code integrity verified. Starting the application...");
             SpringApplication.run(DceBlockchainApplication.class, args);
