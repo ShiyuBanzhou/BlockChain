@@ -27,7 +27,7 @@ def write_hash_to_file(jar_path, hash_value):
 
 def main():
     # 指定 JAR 包的位置和名称
-    jar_path = os.path.join(os.getcwd(), 'target', 'blockchain-node2.jar')
+    jar_path = os.path.join(os.getcwd(), 'target', 'blockchain.jar')
 
     if not os.path.exists(jar_path):
         print(f"JAR file {jar_path} not found.")
