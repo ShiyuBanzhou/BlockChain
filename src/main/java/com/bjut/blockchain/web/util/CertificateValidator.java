@@ -29,6 +29,7 @@ public class CertificateValidator {
 
             return true;
         } catch (CertificateExpiredException | CertificateNotYetValidException e) {
+            e.printStackTrace();
             System.err.println("证书不在有效期内: " + e.getMessage());
             return false;
         } catch (SignatureException | NoSuchAlgorithmException | InvalidKeyException | CertificateException |

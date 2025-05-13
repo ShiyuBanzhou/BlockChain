@@ -20,7 +20,7 @@ public class CAImpl {
     /**
      * CA服务器的URL地址
       */
-    private static final String CA_URL ="http://127.0.0.1:9065";
+    private static final String CA_URL ="http://10.126.27.166:9065";
 
     /**
      * 用户的可分辨名称(Distinguished Name)，用于在证书签名请求(CSR)中标识用户信息
