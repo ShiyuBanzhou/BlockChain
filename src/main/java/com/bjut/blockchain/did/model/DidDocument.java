@@ -1,6 +1,8 @@
 package com.bjut.blockchain.did.model;
 
 import com.bjut.blockchain.web.util.CommonUtil; // 引入 CommonUtil
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,53 +15,19 @@ import java.util.Objects; // 引入 Objects 用于 equals 和 hashCode
  */
 public class DidDocument {
 
-    // DID 文档的上下文，通常指向 DID 规范
-    private String context = "https://www.w3.org/ns/did/v1"; // 默认上下文
     // DID 主体，即该文档描述的 DID
+    @Getter
+    @Setter
     private String id;
-    // (可选) 此 DID 的别名或其他标识符
-    private List<String> alsoKnownAs;
-    // (可选) 控制此 DID 的其他 DID
-    private List<String> controller;
     // 验证方法列表（例如，公钥）
+    @Getter
     private List<VerificationMethod> verificationMethod = new ArrayList<>();
-    // 认证方法列表（引用 verificationMethod 中的 id）
+    @Getter
     private List<String> authentication = new ArrayList<>();
-    // (可选) 断言方法列表（引用 verificationMethod 中的 id）
-    private List<String> assertionMethod;
-    // (可选) 密钥协商方法列表（引用 verificationMethod 中的 id）
-    private List<String> keyAgreement;
-    // (可选) 能力调用方法列表（引用 verificationMethod 中的 id）
-    private List<String> capabilityInvocation;
-    // (可选) 能力委托方法列表（引用 verificationMethod 中的 id）
-    private List<String> capabilityDelegation;
     // (可选) 服务端点列表
+    @Getter
+    @Setter
     private List<ServiceEndpoint> service;
-
-    // --- Getters 和 Setters ---
-
-    public String getContext() { return context; }
-    public void setContext(String context) { this.context = context; }
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-    public List<String> getAlsoKnownAs() { return alsoKnownAs; }
-    public void setAlsoKnownAs(List<String> alsoKnownAs) { this.alsoKnownAs = alsoKnownAs; }
-    public List<String> getController() { return controller; }
-    public void setController(List<String> controller) { this.controller = controller; }
-    public List<VerificationMethod> getVerificationMethod() { return verificationMethod; }
-    public void setVerificationMethod(List<VerificationMethod> verificationMethod) { this.verificationMethod = verificationMethod; }
-    public List<String> getAuthentication() { return authentication; }
-    public void setAuthentication(List<String> authentication) { this.authentication = authentication; }
-    public List<String> getAssertionMethod() { return assertionMethod; }
-    public void setAssertionMethod(List<String> assertionMethod) { this.assertionMethod = assertionMethod; }
-    public List<String> getKeyAgreement() { return keyAgreement; }
-    public void setKeyAgreement(List<String> keyAgreement) { this.keyAgreement = keyAgreement; }
-    public List<String> getCapabilityInvocation() { return capabilityInvocation; }
-    public void setCapabilityInvocation(List<String> capabilityInvocation) { this.capabilityInvocation = capabilityInvocation; }
-    public List<String> getCapabilityDelegation() { return capabilityDelegation; }
-    public void setCapabilityDelegation(List<String> capabilityDelegation) { this.capabilityDelegation = capabilityDelegation; }
-    public List<ServiceEndpoint> getService() { return service; }
-    public void setService(List<ServiceEndpoint> service) { this.service = service; }
 
     /**
      * 计算此 DID 文档的 SHA-256 哈希值。
@@ -108,29 +76,26 @@ public class DidDocument {
      * 表示 DID 文档中的验证方法（例如公钥）。
      */
     public static class VerificationMethod {
+        // Getters 和 Setters...
+        @Setter
+        @Getter
         private String id; // 验证方法 ID (例如 "did:example:123#keys-1")
+        @Setter
+        @Getter
         private String type; // 验证方法类型 (例如 "RsaVerificationKey2018")
+        @Setter
         private String controller; // 控制此方法的 DID
         private String publicKeyJwk; // JWK 格式的公钥
         private String publicKeyMultibase; // Multibase 格式的公钥
         private String publicKeyBase58; // Base58 格式的公钥 (保留以备他用)
+        @Setter
+        @Getter
         private String publicKeyBase64; // Base64 格式的公钥 (适用于 RSA/EC X.509)
-
-        // Getters 和 Setters...
-        public String getId() { return id; }
-        public void setId(String id) { this.id = id; }
-        public String getType() { return type; }
-        public void setType(String type) { this.type = type; }
-        public String getController() { return controller; }
-        public void setController(String controller) { this.controller = controller; }
-        public String getPublicKeyJwk() { return publicKeyJwk; }
-        public void setPublicKeyJwk(String publicKeyJwk) { this.publicKeyJwk = publicKeyJwk; }
-        public String getPublicKeyMultibase() { return publicKeyMultibase; }
-        public void setPublicKeyMultibase(String publicKeyMultibase) { this.publicKeyMultibase = publicKeyMultibase; }
-        public String getPublicKeyBase58() { return publicKeyBase58; }
-        public void setPublicKeyBase58(String publicKeyBase58) { this.publicKeyBase58 = publicKeyBase58; }
-        public String getPublicKeyBase64() { return publicKeyBase64; }
-        public void setPublicKeyBase64(String publicKeyBase64) { this.publicKeyBase64 = publicKeyBase64; }
+        // Setter for x509CertificateFingerprint
+        // Getter for x509CertificateFingerprint
+        @Setter
+        @Getter
+        private String x509CertificateFingerprint;
 
         @Override
         public boolean equals(Object o) {
@@ -161,15 +126,7 @@ public class DidDocument {
         private String id; // 服务端点 ID (例如 "did:example:123#service-1")
         private String type; // 服务类型 (例如 "DIDCommMessaging")
         private String serviceEndpoint; // 服务的 URL 或 URI
-        // ... 其他服务相关属性
 
-        // Getters 和 Setters...
-        public String getId() { return id; }
-        public void setId(String id) { this.id = id; }
-        public String getType() { return type; }
-        public void setType(String type) { this.type = type; }
-        public String getServiceEndpoint() { return serviceEndpoint; }
-        public void setServiceEndpoint(String serviceEndpoint) { this.serviceEndpoint = serviceEndpoint; }
 
         @Override
         public boolean equals(Object o) {
@@ -191,6 +148,18 @@ public class DidDocument {
                     ", type='" + type + '\'' +
                     ", serviceEndpoint='" + serviceEndpoint + '\'' +
                     '}';
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
+
+        public void setServiceEndpoint(String serviceEndpoint) {
+            this.serviceEndpoint = serviceEndpoint;
         }
     }
 }

@@ -1,6 +1,8 @@
 package com.bjut.blockchain.did.service;
 
 import com.bjut.blockchain.did.model.DidDocument;
+import com.bjut.blockchain.web.service.CAImpl;
+import com.bjut.blockchain.web.util.CertificateValidator;
 import com.bjut.blockchain.web.util.CryptoUtil; // 引入你的加密工具类
 
 import org.slf4j.Logger;
@@ -8,9 +10,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.KeyPair; // 保持导入以备将来使用或参考
 import java.security.KeyFactory; // 用于重构 PublicKey
+import java.security.cert.X509Certificate;
 import java.security.spec.X509EncodedKeySpec; // 用于重构 PublicKey
 import java.util.Base64;
 import java.util.Optional;
@@ -237,5 +241,87 @@ public class DidAuthenticationService {
         KeyPair kp = didService.getKeyPairForDid(didString); // 此方法返回 KeyPair 或 null
         // 使用 Optional.ofNullable 包装结果
         return Optional.ofNullable(kp);
+    }
+
+    /**
+     * 验证一个实体是否拥有给定 DID 的控制权，并验证其提供的证书。
+     *
+     * @param didString             要验证的 DID。
+     * @param challenge             一个随机生成的字符串或数据。
+     * @param signatureBase64       签名的 Base64 编码。
+     * @param presentedCertificateBase64 实体出示的X.509证书的Base64编码。
+     * @param publicKeyIdInDocument (可选) DID 文档中用于签名的公钥的 ID。
+     * @return 如果签名和证书都有效且与 DID 关联，则为 true。
+     */
+    public boolean verifyDidControlWithCertificate(String didString, String challenge, String signatureBase64,
+                                                   String presentedCertificateBase64, String publicKeyIdInDocument) {
+        // 1. 获取 DID 文档
+        DidDocument didDocument = didService.getDidDocument(didString);
+        if (didDocument == null) {
+            logger.warn("DID 控制权验证失败：无法解析 DID 文档 {}", didString);
+            return false;
+        }
+
+        // 2. 查找用于验证的公钥对应的验证方法
+        Optional<DidDocument.VerificationMethod> verificationMethodOpt = findVerificationMethod(didDocument, publicKeyIdInDocument);
+        if (!verificationMethodOpt.isPresent()) {
+            logger.warn("DID 控制权验证失败：在 DID 文档 {} 中未找到合适的验证方法 (请求的密钥 ID: {}).", didString, publicKeyIdInDocument);
+            return false;
+        }
+        DidDocument.VerificationMethod vm = verificationMethodOpt.get();
+        logger.debug("找到验证方法: {}", vm.getId());
+
+        // 3. 验证出示的证书
+        if (presentedCertificateBase64 == null || presentedCertificateBase64.isEmpty()) {
+            logger.warn("DID 控制权验证失败：未提供证书。");
+            return false;
+        }
+        try {
+            X509Certificate presentedCertificate = CertificateValidator.stringToCertificate(presentedCertificateBase64);
+
+            // 3a. 验证证书本身是否有效 (信任链, 有效期等)
+            // 你需要传入根CA证书来进行完整的链验证
+            String rootCaCertStr = CAImpl.getRootCertificateStr(); // 获取根CA证书字符串
+            if (!CertificateValidator.validateCertificate(presentedCertificate, CertificateValidator.stringToCertificate(rootCaCertStr))) {
+                logger.warn("DID 控制权验证失败：出示的证书无效或不受信任。 DID: {}", didString);
+                return false;
+            }
+            logger.debug("出示的证书 {} 本身有效。", presentedCertificate.getSubjectX500Principal().getName());
+
+            // 3b. 验证证书与DID文档中声明的证书指纹是否匹配
+            String expectedFingerprint = vm.getX509CertificateFingerprint();
+            if (expectedFingerprint == null || expectedFingerprint.isEmpty()) {
+                logger.warn("DID 控制权验证失败：DID文档的验证方法 {} 未声明证书指纹。", vm.getId());
+                return false; // 或者根据策略，如果允许无指纹，则跳过此检查
+            }
+            MessageDigest messageDigestPresented = MessageDigest.getInstance("SHA-256");
+            byte[] presentedFingerprintBytes = messageDigestPresented.digest(presentedCertificate.getEncoded());
+            String presentedFingerprint = CryptoUtil.byte2Hex(presentedFingerprintBytes);
+
+            if (!expectedFingerprint.equals(presentedFingerprint)) {
+                logger.warn("DID 控制权验证失败：证书指纹不匹配。预期: {}, 实际: {}. DID: {}",
+                        expectedFingerprint, presentedFingerprint, didString);
+                return false;
+            }
+            logger.debug("证书指纹匹配成功。");
+
+            // 3c. (重要) 验证证书中的公钥是否与VerificationMethod中的公钥匹配
+            String vmPublicKeyBase64 = vm.getPublicKeyBase64();
+            String certPublicKeyBase64 = Base64.getEncoder().encodeToString(presentedCertificate.getPublicKey().getEncoded());
+            if (!vmPublicKeyBase64.equals(certPublicKeyBase64)) {
+                logger.warn("DID 控制权验证失败：VerificationMethod 公钥与证书公钥不匹配. DID: {}", didString);
+                return false;
+            }
+            logger.debug("VerificationMethod 公钥与证书公钥匹配成功。");
+
+        } catch (Exception e) {
+            logger.error("DID 控制权验证失败：处理或验证证书时出错。 DID: {}, Error: {}", didString, e.getMessage(), e);
+            return false;
+        }
+
+        // 4. 如果上述所有检查都通过，则继续验证签名 (使用证书中的公钥或VM中的公钥，它们此时应已验证为匹配)
+        // （这里的 verifyDidControl 方法需要调用，或者将其逻辑合并到这里）
+        return verifyDidControl(didString, challenge, signatureBase64, publicKeyIdInDocument); // 调用原有的签名验证逻辑
+        // 它会从VM中获取公钥
     }
 }

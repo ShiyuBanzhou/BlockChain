@@ -48,49 +48,35 @@ public class DidController {
     @PostMapping("/create")
     public ResponseEntity<?> createDid() {
         try {
-            // 1. 生成一个新的密钥对
-            // **修正：从 Ed25519 改为 RSA 以兼容 Java 8**
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-            keyGen.initialize(2048); // RSA 的标准密钥长度
-            KeyPair keyPair = keyGen.generateKeyPair();
-            lastGeneratedKeyPair = keyPair; // 临时存储以供演示
-            System.out.println("已生成 RSA 密钥对。");
+            keyGen.initialize(2048);
+            KeyPair didKeyPair = keyGen.generateKeyPair(); // 这个密钥对用于DID的验证方法
+            // lastGeneratedKeyPair = didKeyPair; // 你可以用它来演示签名，但它与证书密钥对的关系需要明确
 
-            // 2. 获取 Base64 格式的公钥 (RSA/EC 的 X.509 标准编码)
-            String publicKeyEncoded = Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
-            System.out.println("生成的公钥 (Base64, X.509): " + publicKeyEncoded);
+            String publicKeyForDidDocument = Base64.getEncoder().encodeToString(didKeyPair.getPublic().getEncoded());
+            System.out.println("为DID文档生成的公钥 (Base64, X.509): " + publicKeyForDidDocument);
 
-            // *** 使用 Base64 编码的密钥 ***
-            String publicKeyForDid = publicKeyEncoded;
+            Did newDid = didService.createDid(publicKeyForDidDocument);
 
-            // 3. 调用 DidService 创建 DID 对象
-            Did newDid = didService.createDid(publicKeyForDid);
             if (newDid == null) {
-                // 如果 DID 服务未能创建 DID 对象
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("创建 DID 对象失败。");
             }
-            lastGeneratedDid = newDid.getDidString(); // 存储 DID 以供验证演示
+            // lastGeneratedDid = newDid.getDidString(); // 你可能还想存储这个
 
-            // 4. 使用 DID 字符串检索生成的 DidDocument
             DidDocument didDocument = didService.getDidDocument(newDid.getDidString());
 
             if (didDocument != null) {
-                // 如果成功获取 DID 文档
                 System.out.println("DID 创建成功: " + newDid.getDidString());
-                // 返回 DidDocument
                 return ResponseEntity.ok(didDocument);
             } else {
-                // 如果创建 DID 成功但未能检索其文档，可能表示内部问题
                 System.err.println("DID 已创建 ("+ newDid.getDidString() +"), 但检索其文档失败。");
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("创建后检索 DID 文档失败。");
             }
 
         } catch (NoSuchAlgorithmException e) {
-            // 对于 "RSA" 通常不应发生此异常，除非 JRE 严重损坏
             System.err.println("生成密钥对时出错: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("生成密钥出错：不支持的算法 (对于 RSA 来说意外)。");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("生成密钥出错。");
         } catch (Exception e) {
-            // 捕获其他意外错误
             System.err.println("创建 DID 时出错: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("DID 创建期间发生意外错误。");

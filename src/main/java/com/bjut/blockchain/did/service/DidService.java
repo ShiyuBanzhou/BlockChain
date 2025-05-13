@@ -1,5 +1,7 @@
 package com.bjut.blockchain.did.service;
 
+import com.bjut.blockchain.web.service.CAImpl;
+import com.bjut.blockchain.web.util.CryptoUtil;
 import com.bjut.blockchain.did.model.Did;
 import com.bjut.blockchain.did.model.DidDocument;
 import com.bjut.blockchain.web.service.BlockService; // 假设引入 BlockService
@@ -8,6 +10,9 @@ import com.bjut.blockchain.web.util.CommonUtil; // 引入 CommonUtil 计算哈�
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.security.MessageDigest;
+import java.security.cert.X509Certificate;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -53,12 +58,31 @@ public class DidService {
         // 创建验证方法对象并填充信息
         DidDocument.VerificationMethod verificationMethod = new DidDocument.VerificationMethod();
         verificationMethod.setId(didString + "#keys-1"); // 设置验证方法 ID
-        // **修正：将类型设置为表示 RSA 密钥的类型**
         verificationMethod.setType("RsaVerificationKey2018"); // RSA 密钥的标准类型
         verificationMethod.setController(didString); // 控制者是 DID 本身
-        // **修正：使用 setPublicKeyBase64 存储 Base64 编码的密钥**
         verificationMethod.setPublicKeyBase64(publicKeyBase64);
         // verificationMethod.setPublicKeyBase58(null); // Base58 字段可以设为 null 或不使用
+
+        // ---- 集成证书管理 ----
+        try {
+            X509Certificate nodeCertificate = CAImpl.getCertificate(); // 获取节点自己的证书
+            if (nodeCertificate != null) {
+                // 计算证书指纹
+                MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
+                byte[] fingerprintBytes = messageDigest.digest(nodeCertificate.getEncoded());
+                String fingerprint = CryptoUtil.byte2Hex(fingerprintBytes);
+                verificationMethod.setX509CertificateFingerprint(fingerprint);
+
+
+                System.out.println("证书已关联到DID: " + didString + "，指纹: " + fingerprint);
+            } else {
+                System.err.println("未能获取证书用于DID: " + didString);
+            }
+
+        } catch (Exception e) {
+            System.err.println("在DID创建过程中处理证书时出错: " + e.getMessage());
+            // 根据错误处理策略决定是否继续
+        }
 
         // 将验证方法添加到 DID 文档
         doc.getVerificationMethod().add(verificationMethod);
@@ -70,10 +94,6 @@ public class DidService {
 
         // (可选) 将 DID 信息锚定到区块链
         anchorDidToBlockchain(doc);
-
-        // (可选) 如果此服务管理密钥对，则在此处存储
-        // KeyPair keyPair = ...; // 获取或生成密钥对
-        // keyStorage.put(didString, keyPair);
 
         return did; // 返回创建的 DID 对象
     }

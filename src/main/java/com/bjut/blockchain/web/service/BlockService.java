@@ -48,7 +48,7 @@ public class BlockService {
 		tsaList.add(tsa);
 		Transaction tsa2 = new Transaction();
 		tsa2.setId("2");
-		tsa.setData("区块链高度为：1");
+		tsa2.setData("区块链高度为：1");
 		tsaList.add(tsa2);		
 		genesisBlock.setTransactions(tsaList);
 		//设置创世区块的hash值
@@ -291,5 +291,14 @@ public class BlockService {
 			System.out.println("No anchor hash found for DID " + did + " in the blockchain.");
 		}
 		return latestHash; // 返回找到的最新哈希，或 null
+	}
+
+	public List<Transaction> getTransactionPool() {
+		return new ArrayList<>(this.transactionPool); // 返回副本以防并发修改问题，或者直接返回引用并注意同步
+	}
+
+	public void clearTransactionPool() {
+		this.transactionPool.clear();
+		System.out.println("交易池已清空。");
 	}
 }
