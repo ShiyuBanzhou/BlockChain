@@ -98,4 +98,7 @@ public class BlockCache {
 		this.initialPeers = initialPeers;
 	}
 
+    public List<Block> getBlockchain() {
+		return blockChain;
+    }
 }

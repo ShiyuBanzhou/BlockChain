@@ -1,40 +1,36 @@
 package com.bjut.blockchain.did.model;
 
-import java.io.Serializable;
-import java.util.Objects;
-
 /**
- * 简化的DID表示。
- * 格式通常是 did:method:specific-identifier
- * 例如: did:example:123456789abcdefghi
+ * 表示一个去中心化标识符 (DID)。
+ * 包含 DID 字符串本身。
  */
-public class Did implements Serializable {
-    private static final long serialVersionUID = 1L;
+public class Did {
 
-    private final String method = "example"; // DID方法，初期简化为 "example"
-    private final String specificIdentifier; // 特定标识符
+    private final String didString; // DID 字符串，例如 "did:example:123456789abcdefghi"
 
-    public Did(String specificIdentifier) {
-        if (specificIdentifier == null || specificIdentifier.trim().isEmpty()) {
-            throw new IllegalArgumentException("Specific identifier 不能为空"); // 特定标识符不能为空
+    /**
+     * 构造函数，使用给定的字符串创建一个 DID 对象。
+     * @param didString DID 字符串。
+     */
+    public Did(String didString) {
+        // 可以在这里添加对 didString 格式的验证逻辑
+        if (didString == null || !didString.startsWith("did:")) {
+            throw new IllegalArgumentException("Invalid DID format: " + didString);
         }
-        this.specificIdentifier = specificIdentifier;
-    }
-
-    public String getMethod() {
-        return method;
-    }
-
-    public String getSpecificIdentifier() {
-        return specificIdentifier;
+        this.didString = didString;
     }
 
     /**
-     * 返回完整的DID字符串。
-     * @return 例如 "did:example:123456789abcdefghi"
+     * 获取 DID 字符串。
+     * @return DID 字符串。
      */
-    public String getFullDid() { // 修复：修正了方法名
-        return "did:" + method + ":" + specificIdentifier;
+    public String getDidString() {
+        return didString;
+    }
+
+    @Override
+    public String toString() {
+        return didString;
     }
 
     @Override
@@ -42,16 +38,11 @@ public class Did implements Serializable {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Did did = (Did) o;
-        return method.equals(did.method) && specificIdentifier.equals(did.specificIdentifier);
+        return didString.equals(did.didString);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(method, specificIdentifier);
-    }
-
-    @Override
-    public String toString() {
-        return getFullDid();
+        return didString.hashCode();
     }
 }

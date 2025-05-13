@@ -68,7 +68,7 @@
 
     <script>
         // 定义全局变量
-        const BASE_URL = 'http://10.126.27.166:8080';
+        const BASE_URL = 'http://localhost:8080';
 
         // 获取证书按钮点击事件
         document.getElementById('getCertificateBtn').addEventListener('click', function () {
@@ -131,7 +131,7 @@
                         // 遍历每个Block中的Transactions
                         block.transactions.forEach(transaction => {
                             displayText += `  Transaction ID: ${transaction.id}\n`;
-                            displayText += `  Business Info: ${transaction.businessInfo}\n`;
+                            displayText += `  Business Info: ${transaction.data}\n`;
                         });
 
                         displayText += '\n'; // 每个Block之间添加空行
@@ -169,7 +169,7 @@
                     let displayText = ''; // 用于存储最终的显示内容
                     data.forEach((transaction, index) => {
                         displayText += `Transaction ID: ${transaction.id}\n`;
-                        displayText += `Business Info: ${transaction.businessInfo}\n`;
+                        displayText += `Business Info: ${transaction.data}\n`;
 
                         // 每两个transaction之间添加一个空行
                         if ((index + 1) % 2 === 0) {

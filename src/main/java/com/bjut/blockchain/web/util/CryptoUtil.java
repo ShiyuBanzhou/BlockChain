@@ -1,5 +1,6 @@
 package com.bjut.blockchain.web.util;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.UUID;
 import org.springframework.util.DigestUtils;
@@ -108,13 +109,53 @@ public class CryptoUtil {
 	 */
 	public static boolean verify(byte[] data, byte[] publicKeyBytes, byte[] signatureBytes) throws Exception {
 		X509EncodedKeySpec x509EncodedKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-		// 假设密钥是EC类型的
-		KeyFactory keyFactory = KeyFactory.getInstance("EC");
+		KeyFactory keyFactory = KeyFactory.getInstance("RSA");
 		PublicKey publicKey = keyFactory.generatePublic(x509EncodedKeySpec);
 
-		Signature signature = Signature.getInstance("SHA256withECDSA");
+		Signature signature = Signature.getInstance("SHA256withRSA");
 		signature.initVerify(publicKey);
 		signature.update(data);
 		return signature.verify(signatureBytes);
 	}
+
+	/**
+	 * 对输入字符串应用 SHA-256 哈希算法。
+	 *
+	 * @param input 要进行哈希处理的字符串。
+	 * @return 输入字符串的 SHA-256 哈希值（以十六进制字符串形式表示）。
+	 * 如果发生异常则返回 null。
+	 */
+	public static String applySha256(String input) {
+		try {
+			// 获取 SHA-256 MessageDigest 实例
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+			// 对输入字符串进行哈希计算 (使用 UTF-8 编码)
+			byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+
+			// 将 byte 数组转换为十六进制字符串
+			StringBuilder hexString = new StringBuilder();
+			for (byte b : hash) {
+				// byte 转 int，然后转十六进制，& 0xff 处理负数情况
+				String hex = Integer.toHexString(0xff & b);
+				// 保证每个字节都表示为两位十六进制数
+				if (hex.length() == 1) {
+					hexString.append('0');
+				}
+				hexString.append(hex);
+			}
+			return hexString.toString();
+		} catch (NoSuchAlgorithmException e) {
+			// 通常不应该发生，因为 SHA-256 是标准算法
+			System.err.println("Error applying SHA-256: Algorithm not found. " + e.getMessage());
+			// 抛出运行时异常，因为这是环境问题
+			throw new RuntimeException("SHA-256 algorithm not found", e);
+		} catch (Exception e) {
+			// 捕获其他可能的异常
+			System.err.println("Error applying SHA-256: " + e.getMessage());
+			e.printStackTrace();
+			return null; // 或者根据错误处理策略返回特定值
+		}
+	}
+
 }

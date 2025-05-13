@@ -1,136 +1,241 @@
 package com.bjut.blockchain.did.service;
 
 import com.bjut.blockchain.did.model.DidDocument;
-import com.bjut.blockchain.web.util.CryptoUtil; // 您的加密工具类
+import com.bjut.blockchain.web.util.CryptoUtil; // 引入你的加密工具类
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.security.PublicKey; // 修复：添加了导入
-import java.security.KeyPair;   // 修复：添加了导入
+import java.security.PublicKey;
+import java.security.KeyPair; // 保持导入以备将来使用或参考
 import java.security.KeyFactory; // 用于重构 PublicKey
 import java.security.spec.X509EncodedKeySpec; // 用于重构 PublicKey
 import java.util.Base64;
 import java.util.Optional;
 
+/**
+ * 处理基于 DID 的认证和验证的服务类。
+ */
 @Service
 public class DidAuthenticationService {
     private static final Logger logger = LoggerFactory.getLogger(DidAuthenticationService.class);
 
     @Autowired
-    private DidService didService; // 注入DidService
+    private DidService didService; // 注入 DidService
 
     /**
-     * 验证一个实体是否拥有给定DID的控制权。
-     * 这通常通过要求实体使用其与DID关联的私钥签署一个挑战（challenge）来实现。
+     * 验证一个实体是否拥有给定 DID 的控制权。
+     * 通过验证使用与 DID 关联的私钥对挑战（challenge）进行的签名来实现。
      *
-     * @param didString 要验证的DID
-     * @param challenge 一个随机生成的字符串或数据，由调用方提供
-     * @param signatureBase64 由实体使用其私钥对挑战进行的签名的Base64编码
-     * @param publicKeyIdInDocument (可选) DID文档中用于签名的公钥的ID (例如 "did:example:123#keys-1")
-     * 如果为null，则尝试使用DID文档中的第一个合适的公钥。
-     * @return 如果签名有效且与DID关联，则为true。
+     * @param didString             要验证的 DID。
+     * @param challenge             一个随机生成的字符串或数据，由调用方提供。
+     * @param signatureBase64       由实体使用其私钥对挑战进行的签名的 Base64 编码。
+     * @param publicKeyIdInDocument (可选) DID 文档中用于签名的公钥的 ID (例如 "did:example:123#keys-1")。
+     * 如果为 null，则尝试使用 DID 文档中的第一个合适的公钥。
+     * @return 如果签名有效且与 DID 关联，则为 true。
      */
     public boolean verifyDidControl(String didString, String challenge, String signatureBase64, String publicKeyIdInDocument) {
-        Optional<DidDocument> didDocumentOpt = didService.resolveDid(didString);
-        if (!didDocumentOpt.isPresent()) { // 修复：从 isEmpty() 改为 !isPresent() 以兼容旧版Java
-            logger.warn("DID认证失败：无法解析DID {}", didString);
+        // 1. 获取 DID 文档
+        DidDocument didDocument = didService.getDidDocument(didString);
+        if (didDocument == null) {
+            logger.warn("DID 控制权验证失败：无法解析 DID 文档 {}", didString);
             return false;
         }
 
-        DidDocument didDocument = didDocumentOpt.get();
+        // 2. 检查是否存在验证方法
         if (didDocument.getVerificationMethod() == null || didDocument.getVerificationMethod().isEmpty()) {
-            logger.warn("DID认证失败：DID文档 {} 中没有验证方法。", didString);
+            logger.warn("DID 控制权验证失败：DID 文档 {} 中没有验证方法。", didString);
             return false;
         }
 
-        // 查找用于验证的公钥
+        // 3. 查找用于验证的公钥对应的验证方法
         Optional<DidDocument.VerificationMethod> verificationMethodOpt = findVerificationMethod(didDocument, publicKeyIdInDocument);
 
-        if (!verificationMethodOpt.isPresent()) { // 修复：从 isEmpty() 改为 !isPresent()
-            logger.warn("DID认证失败：在DID文档 {} 中未找到合适的公钥 (ID: {}).", didString, publicKeyIdInDocument);
+        // 检查 Optional 是否包含值 (兼容 Java 8)
+        if (!verificationMethodOpt.isPresent()) {
+            logger.warn("DID 控制权验证失败：在 DID 文档 {} 中未找到合适的验证方法 (请求的密钥 ID: {}).", didString, publicKeyIdInDocument);
             return false;
         }
 
         DidDocument.VerificationMethod vm = verificationMethodOpt.get();
+        logger.debug("找到验证方法: {}", vm.getId());
+
+        // 4. 从验证方法中获取编码后的公钥字符串
+        // **修正：使用 getPublicKeyBase64() 获取密钥**
+        String encodedPublicKey = vm.getPublicKeyBase64();
+        if (encodedPublicKey == null || encodedPublicKey.isEmpty()) {
+            // 如果 Base64 字段为空，可以尝试其他字段或报错
+            logger.warn("DID 控制权验证失败：验证方法 {} 中的公钥字符串 (Base64) 缺失或为空。", vm.getId());
+            return false;
+        }
+
         try {
-            // 从DID文档中获取公钥 (假设是Base64编码的)
-            byte[] publicKeyEncodedBytes = Base64.getDecoder().decode(vm.getPublicKeyEncoded());
-
-            // 从编码字节重构 PublicKey 对象
-            // 从验证方法类型推断算法 (简化版)
-            String keyAlgorithm;
-            if (vm.getType().contains("Rsa")) {
-                keyAlgorithm = "RSA";
-            } else if (vm.getType().contains("Ecdsa") || vm.getType().contains("EC")) { // EC密钥常用
-                keyAlgorithm = "EC"; // 或 "ECDSA"，取决于提供者
-            } else {
-                logger.error("无法从验证方法类型 {} 推断公钥算法。", vm.getType());
-                // 尝试使用存储的密钥对中的算法进行演示，
-                // 这在生产环境中不应该这样做。
-                // 在生产环境中，DID文档的VM类型必须足够明确。
-                Optional<KeyPair> tempKeyPair = didService.getKeyPairForDid(didString);
-                if (tempKeyPair.isPresent()) {
-                    keyAlgorithm = tempKeyPair.get().getPublic().getAlgorithm();
-                    logger.warn("回退：使用存储的密钥对中的算法：{}", keyAlgorithm);
-                } else {
-                    logger.error("无法确定公钥算法，也无法从存储的密钥对中回退。");
-                    return false;
-                }
-            }
-
-            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(publicKeyEncodedBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance(keyAlgorithm);
-            PublicKey publicKey = keyFactory.generatePublic(keySpec); // 修复：正确地重构 PublicKey
-
-            byte[] signatureBytes = Base64.getDecoder().decode(signatureBase64);
-
-            // 重要提示：您的 CryptoUtil.verify 方法签名是 verify(byte[] data, byte[] publicKey, byte[] sign)
-            // 此处代码期望的是 verify(byte[] data, byte[] signature, PublicKey publicKey)
-            // 您需要：
-            // 1. 修改您的 CryptoUtil.verify 以接受 PublicKey 对象并匹配参数顺序。
-            // 2. 或者，在此处更改调用为 publicKey.getEncoded() 并调整参数顺序，
-            //    但通常首选使用 PublicKey 对象。
-            // 目前，此代码调用方式假定 CryptoUtil 匹配首选签名。
-            // boolean isValid = CryptoUtil.verify(challenge.getBytes(), signatureBytes, publicKey);
-
-            // 修复：适配用户的 CryptoUtil.verify(byte[] data, byte[] publicKey, byte[] sign)
-            // 这意味着我们将公钥作为字节传递，并交换签名和公钥的顺序。
-            boolean isValid = CryptoUtil.verify(challenge.getBytes(), publicKey.getEncoded(), signatureBytes);
-            logger.debug("验证调用：数据长度={}, 公钥字节长度={}, 签名字节长度={}",
-                    challenge.getBytes().length, publicKey.getEncoded().length, signatureBytes.length);
-
-
-            if (isValid) {
-                logger.info("DID {} 控制验证成功。", didString);
-                return true;
-            } else {
-                logger.warn("DID {} 控制验证失败：签名无效。", didString);
+            // 5. 从编码字符串重构 PublicKey 对象
+            // 使用辅助方法 reconstructPublicKey
+            PublicKey publicKey = reconstructPublicKey(encodedPublicKey, vm.getType());
+            if (publicKey == null) {
+                logger.error("DID 控制权验证失败：无法从验证方法 {} (DID: {}) 重构公钥。", vm.getId(), didString);
                 return false;
             }
+            logger.debug("成功重构公钥: 算法={}, 格式={}", publicKey.getAlgorithm(), publicKey.getFormat());
+
+            // 6. 解码签名
+            byte[] signatureBytes = Base64.getDecoder().decode(signatureBase64);
+
+            // 7. 验证签名
+            // **适配你的 CryptoUtil.verify(byte[] data, byte[] publicKey, byte[] sign) 签名**
+            // 将 PublicKey 对象编码为字节数组，并调整参数顺序。
+            byte[] publicKeyBytes = publicKey.getEncoded();
+            boolean isValid = CryptoUtil.verify(challenge.getBytes(), publicKeyBytes, signatureBytes);
+
+            logger.debug("正在验证签名: 数据字节数={}, 公钥字节数={}, 签名字节数={}",
+                    challenge.getBytes().length, publicKeyBytes.length, signatureBytes.length);
+
+            if (isValid) {
+                logger.info("DID {} 控制权验证成功。", didString);
+                return true;
+            } else {
+                logger.warn("DID {} 控制权验证失败：签名无效。", didString);
+                return false;
+            }
+        } catch (IllegalArgumentException e) {
+            // Base64 解码失败
+            logger.error("DID 控制权验证失败 (DID: {}): 无效的 Base64 编码 (签名或公钥)。{}", didString, e.getMessage());
+            return false;
         } catch (Exception e) {
-            logger.error("DID认证期间发生错误 for DID {}: {}", didString, e.getMessage(), e);
+            // 其他异常，例如 KeyFactory 错误, Signature 错误等
+            logger.error("DID 控制权验证失败 (DID: {}): 验证过程中发生错误。{}", didString, e.getMessage(), e);
             return false;
         }
     }
 
     /**
-     * 在DID文档中查找指定的验证方法。
-     * @param doc DID文档
-     * @param keyId 要查找的验证方法ID (例如 "did:example:123#keys-1")。如果为null，则返回第一个。
-     * @return 包含验证方法的Optional，如果未找到则为空。
+     * 在 DID 文档中查找指定的验证方法。
+     *
+     * @param doc   DID 文档。
+     * @param keyId 要查找的验证方法 ID (例如 "did:example:123#keys-1")。如果为 null，则返回第一个关联 'authentication' 的方法，或第一个方法作为回退。
+     * @return 包含验证方法的 Optional，如果未找到则为空。
      */
     private Optional<DidDocument.VerificationMethod> findVerificationMethod(DidDocument doc, String keyId) {
-        if (doc.getVerificationMethod() == null) {
+        // 检查验证方法列表是否有效
+        if (doc.getVerificationMethod() == null || doc.getVerificationMethod().isEmpty()) {
             return Optional.empty();
         }
-        if (keyId != null) { // 如果指定了keyId
+
+        // 1. 如果指定了 keyId，进行精确查找
+        if (keyId != null) {
             return doc.getVerificationMethod().stream()
-                    .filter(vm -> keyId.equals(vm.getId()))
-                    .findFirst();
-        } else { // 如果未指定keyId，返回第一个（这是一个简化策略）
-            return doc.getVerificationMethod().stream().findFirst();
+                    .filter(vm -> vm != null && keyId.equals(vm.getId())) // 过滤出 ID 匹配的项
+                    .findFirst(); // 返回第一个匹配项
         }
+
+        // 2. 如果未指定 keyId，优先查找 'authentication' 部分引用的第一个密钥
+        if (doc.getAuthentication() != null && !doc.getAuthentication().isEmpty()) {
+            String firstAuthKeyId = doc.getAuthentication().get(0); // 获取第一个认证密钥 ID
+            Optional<DidDocument.VerificationMethod> authVm = doc.getVerificationMethod().stream()
+                    .filter(vm -> vm != null && firstAuthKeyId.equals(vm.getId())) // 查找对应的验证方法
+                    .findFirst();
+            if (authVm.isPresent()) { // 检查是否找到 (Java 8 兼容)
+                logger.debug("未指定 keyId，使用第一个认证密钥: {}", firstAuthKeyId);
+                return authVm; // 返回找到的认证密钥
+            } else {
+                // 如果认证密钥 ID 在验证方法列表中找不到，记录警告
+                logger.warn("第一个认证密钥 ID '{}' 在验证方法列表中未找到。", firstAuthKeyId);
+            }
+        }
+
+        // 3. 如果 'authentication' 找不到或为空，或者引用的密钥无效，则回退到列表中的第一个验证方法
+        logger.debug("未指定 keyId 且未找到合适的认证密钥，回退到第一个验证方法。");
+        return doc.getVerificationMethod().stream().findFirst(); // 返回列表中的第一个验证方法
+    }
+
+
+    /**
+     * 从其编码的字符串表示和类型重构 PublicKey 对象。
+     * **注意：** 这是一个占位符实现，需要根据实际使用的密钥类型和编码进行具体实现。
+     * 对于 Ed25519、Base58 等，标准 Java 库支持有限，可能需要外部库（如 BouncyCastle）。
+     *
+     * @param encodedKey 编码的公钥字符串（例如 Base58、Base64）。
+     * @param keyType    密钥类型（例如 "RsaVerificationKey2018", "Ed25519VerificationKey2018"）。
+     * @return PublicKey 对象，如果重构失败则返回 null。
+     */
+    private PublicKey reconstructPublicKey(String encodedKey, String keyType) {
+        // 记录尝试重构的日志
+        logger.debug("尝试重构公钥。类型: {}, 编码密钥 (前10字符): {}", keyType, encodedKey.substring(0, Math.min(10, encodedKey.length())));
+        String algorithm = null; // 用于 KeyFactory 的算法名称
+        byte[] keyBytes = null; // 解码后的密钥字节
+
+        try {
+            // 假设 RSA/EC 密钥使用 Base64 编码
+            keyBytes = Base64.getDecoder().decode(encodedKey);
+            logger.debug("成功解码 Base64 密钥，长度: {}", keyBytes.length);
+        } catch (IllegalArgumentException e) {
+            // 如果 Base64 解码失败，记录错误
+            logger.error("无法将公钥解码为 Base64: {}", e.getMessage());
+            // 在这里可以添加对 Base58 或其他编码的尝试（如果需要）
+            // 例如: 使用 BouncyCastle 或其他库进行 Base58 解码
+            return null; // 如果不支持或解码失败，返回 null
+        }
+
+        // 根据 keyType 推断 KeyFactory 所需的算法名称
+        if (keyType == null) {
+            logger.error("无法确定密钥算法：keyType 为 null。");
+            return null;
+            // **修正：确保类型检查与 DidService 中设置的类型 ("RsaVerificationKey2018") 匹配**
+        } else if ("RsaVerificationKey2018".equals(keyType) || keyType.contains("Rsa")) { // 优先检查特定类型
+            algorithm = "RSA";
+        } else if (keyType.contains("Ecdsa") || keyType.contains("EC") || keyType.contains("P256") || keyType.contains("K256")) { // 常见的 ECDSA 指示符
+            algorithm = "EC";
+        } else if (keyType.contains("Ed25519")) {
+            algorithm = "EdDSA"; // EdDSA 密钥在标准 Java 中的算法名称 (可能需要 BouncyCastle 或 JDK 15+)
+            logger.warn("EdDSA 密钥重构可能需要 BouncyCastle 提供者或 JDK 15+。");
+        } else {
+            // 如果类型无法识别
+            logger.error("不支持或无法识别的密钥类型，无法确定算法: {}", keyType);
+            return null;
+        }
+        logger.debug("推断出的密钥算法: {}", algorithm);
+
+        try {
+            // 对于 RSA 和 EC 密钥，使用 X.509 规范
+            if ("RSA".equals(algorithm) || "EC".equals(algorithm)) {
+                X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
+                KeyFactory keyFactory = KeyFactory.getInstance(algorithm);
+                return keyFactory.generatePublic(keySpec); // 生成 PublicKey 对象
+            } else if ("EdDSA".equals(algorithm)) {
+                // EdDSA 重构可能需要特定处理或提供者
+                // 尝试使用标准名称 (可能需要 BouncyCastle 提供者)
+                X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
+                KeyFactory keyFactory = KeyFactory.getInstance("EdDSA"); // 或在某些环境中是 "Ed25519"
+                return keyFactory.generatePublic(keySpec);
+                // 如果使用 BouncyCastle:
+                // KeyFactory keyFactory = KeyFactory.getInstance("EdDSA", "BC"); // 指定 BouncyCastle 提供者
+                // return keyFactory.generatePublic(keySpec);
+            } else {
+                // 理论上不应到达这里，因为前面已经检查过算法
+                logger.error("算法 {} 在此实现中不被支持进行密钥重构。", algorithm);
+                return null;
+            }
+        } catch (Exception e) {
+            // 捕获 KeyFactory.getInstance 或 generatePublic 可能抛出的异常
+            logger.error("重构 PublicKey (算法: {}) 失败: {}", algorithm, e.getMessage(), e);
+            return null; // 重构失败返回 null
+        }
+    }
+
+    // --- 用于演示 Optional 用法的示例方法 (保留供参考) ---
+    /**
+     * 演示将可能为 null 的 KeyPair 包装在 Optional 中的示例方法。
+     *
+     * @param didString DID 字符串。
+     * @return Optional<KeyPair>
+     */
+    public Optional<KeyPair> getKeyPairOptional(String didString) {
+        // 假设 getKeyPairForDid 可能返回 null
+        KeyPair kp = didService.getKeyPairForDid(didString); // 此方法返回 KeyPair 或 null
+        // 使用 Optional.ofNullable 包装结果
+        return Optional.ofNullable(kp);
     }
 }

@@ -1,142 +1,251 @@
 package com.bjut.blockchain.did.controller;
 
+import com.bjut.blockchain.did.model.Did;
 import com.bjut.blockchain.did.model.DidDocument;
-import com.bjut.blockchain.did.service.DidAuthenticationService;
+import com.bjut.blockchain.did.service.DidAuthenticationService; // 引入认证服务
 import com.bjut.blockchain.did.service.DidService;
-import com.bjut.blockchain.web.util.CommonUtil; // 假设您有这个工具类
-import com.bjut.blockchain.web.util.CryptoUtil; // 引入CryptoUtil
+// 引入密钥对和相关类
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.Signature; // 引入签名类
+import java.nio.charset.StandardCharsets; // 引入字符集
+import java.util.Base64; // 用于编码公钥和签名
+import java.util.Collections; // 用于空集合
+import java.util.Set;
+import java.util.Optional; // 引入 Optional
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.security.KeyPair; // 修复：添加了导入
-import java.security.PrivateKey; // 修复：添加了导入
-import java.util.Base64;
-import java.util.HashMap; // 修复：用于替代 Map.of() 以兼容旧版Java
-import java.util.Map;
-import java.util.Optional;
-
-
+/**
+ * 用于管理去中心化标识符 (DID) 的 REST 控制器。
+ */
 @RestController
-@RequestMapping("/did") // API路径前缀
+@RequestMapping("/did") // DID 操作的基础路径
 public class DidController {
-    private static final Logger logger = LoggerFactory.getLogger(DidController.class);
 
     @Autowired
-    private DidService didService; // 注入DidService
+    private DidService didService; // 注入 DID 服务
 
-    @Autowired
-    private DidAuthenticationService didAuthenticationService; // 注入DidAuthenticationService
+    @Autowired // 确保 DidAuthenticationService 已注入
+    private DidAuthenticationService didAuthenticationService; // 注入 DID 认证服务
+
+    // 在此控制器实例中临时存储生成的密钥对 (仅用于演示目的)
+    // 实际应用中，应使用安全存储或在外部管理密钥。
+    private KeyPair lastGeneratedKeyPair;
+    private String lastGeneratedDid; // 存储上一个生成的 DID，用于验证演示
 
     /**
-     * 创建一个新的DID。
-     * @return 创建的DID文档或错误信息。
+     * 创建一个新的 DID 及其关联的 DID 文档的端点。
+     * 此示例生成一个密钥对并使用其公钥。
+     * **临时使用 RSA 密钥以兼容旧版 Java。**
+     *
+     * @return 包含创建的 DidDocument 或错误消息的 ResponseEntity。
      */
     @PostMapping("/create")
-    // 修复：移除了 keyType 参数，假设从 DidService 使用默认类型
     public ResponseEntity<?> createDid() {
         try {
-            DidDocument didDocument = didService.createAndRegisterDid();
-            return ResponseEntity.ok(didDocument);
+            // 1. 生成一个新的密钥对
+            // **修正：从 Ed25519 改为 RSA 以兼容 Java 8**
+            KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+            keyGen.initialize(2048); // RSA 的标准密钥长度
+            KeyPair keyPair = keyGen.generateKeyPair();
+            lastGeneratedKeyPair = keyPair; // 临时存储以供演示
+            System.out.println("已生成 RSA 密钥对。");
+
+            // 2. 获取 Base64 格式的公钥 (RSA/EC 的 X.509 标准编码)
+            String publicKeyEncoded = Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
+            System.out.println("生成的公钥 (Base64, X.509): " + publicKeyEncoded);
+
+            // *** 使用 Base64 编码的密钥 ***
+            String publicKeyForDid = publicKeyEncoded;
+
+            // 3. 调用 DidService 创建 DID 对象
+            Did newDid = didService.createDid(publicKeyForDid);
+            if (newDid == null) {
+                // 如果 DID 服务未能创建 DID 对象
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("创建 DID 对象失败。");
+            }
+            lastGeneratedDid = newDid.getDidString(); // 存储 DID 以供验证演示
+
+            // 4. 使用 DID 字符串检索生成的 DidDocument
+            DidDocument didDocument = didService.getDidDocument(newDid.getDidString());
+
+            if (didDocument != null) {
+                // 如果成功获取 DID 文档
+                System.out.println("DID 创建成功: " + newDid.getDidString());
+                // 返回 DidDocument
+                return ResponseEntity.ok(didDocument);
+            } else {
+                // 如果创建 DID 成功但未能检索其文档，可能表示内部问题
+                System.err.println("DID 已创建 ("+ newDid.getDidString() +"), 但检索其文档失败。");
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("创建后检索 DID 文档失败。");
+            }
+
+        } catch (NoSuchAlgorithmException e) {
+            // 对于 "RSA" 通常不应发生此异常，除非 JRE 严重损坏
+            System.err.println("生成密钥对时出错: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("生成密钥出错：不支持的算法 (对于 RSA 来说意外)。");
         } catch (Exception e) {
-            logger.error("创建DID时出错: ", e);
-            // 修复：适配 CommonUtil.getResponse(int code, String msg, Object data)
-            return CommonUtil.getResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(), "创建DID失败: " + e.getMessage(), null);
+            // 捕获其他意外错误
+            System.err.println("创建 DID 时出错: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("DID 创建期间发生意外错误。");
         }
     }
 
     /**
-     * 解析一个DID以获取其DID文档。
-     * @param didMethod DID方法名 (例如 "example")
-     * @param specificId DID的特定标识符
-     * @return DID文档或错误信息。
+     * 将 DID 字符串解析为其 DID 文档的端点。
+     *
+     * @param didString 要解析的 DID 字符串 (作为路径变量传递)。
+     * @return 包含 DidDocument 或 404 Not Found 错误的 ResponseEntity。
      */
-    @GetMapping("/resolve/{didMethod}/{specificId}")
-    public ResponseEntity<?> resolveDid(@PathVariable String didMethod, @PathVariable String specificId) {
-        String fullDid = "did:" + didMethod + ":" + specificId; // 拼接完整的DID
-        Optional<DidDocument> didDocument = didService.resolveDid(fullDid);
-        if (didDocument.isPresent()) { // 修复：从 isEmpty() 改为 isPresent()
-            return ResponseEntity.ok(didDocument.get());
+    @GetMapping("/resolve/{didString:.+}") // 使用 .+ 捕获包含冒号的完整 DID 字符串
+    public ResponseEntity<DidDocument> resolveDid(@PathVariable String didString) {
+        // 基本验证，可以更健壮
+        if (!didString.startsWith("did:")) {
+            return ResponseEntity.badRequest().build(); // 如果格式不正确，返回 400
+        }
+        // 调用服务获取 DID 文档
+        DidDocument didDocument = didService.getDidDocument(didString);
+        if (didDocument != null) {
+            // 如果找到，返回 200 OK 和文档
+            return ResponseEntity.ok(didDocument);
         } else {
-            // 修复：适配 CommonUtil.getResponse(int code, String msg, Object data)
-            return CommonUtil.getResponse(HttpStatus.NOT_FOUND.value(), "DID 未找到: " + fullDid, null);
+            // 如果未找到，返回 404 Not Found
+            return ResponseEntity.notFound().build();
         }
     }
 
     /**
-     * 列出所有已注册的DID。
-     * @return 包含所有DID文档的Map。
+     * 获取所有已注册 DID 列表的端点。
+     *
+     * @return 包含 DID 字符串集合的 ResponseEntity。
      */
     @GetMapping("/list")
-    public ResponseEntity<Map<String, DidDocument>> listAllDids() {
-        return ResponseEntity.ok(didService.getAllDids());
-    }
-
-    /**
-     * (仅用于测试和演示) 为给定的DID和挑战生成签名。
-     * @param didString 要为其生成签名的DID。
-     * @return 包含挑战和签名的响应，或错误信息。
-     */
-    @PostMapping("/generate-challenge-signature")
-    public ResponseEntity<?> generateChallengeSignature(@RequestParam String didString) {
-        Optional<KeyPair> keyPairOpt = didService.getKeyPairForDid(didString); // 仅用于演示，获取存储的密钥对
-        if (!keyPairOpt.isPresent()) { // 修复：从 isEmpty() 改为 isPresent()
-            return CommonUtil.getResponse(HttpStatus.NOT_FOUND.value(), "未找到与DID关联的密钥对 (仅演示): " + didString, null);
-        }
-        PrivateKey privateKey = keyPairOpt.get().getPrivate(); // 获取私钥
-        String challenge = "这是一个随机挑战字符串-" + System.currentTimeMillis(); // 生成一个简单的挑战字符串
-        try {
-            // 重要提示：您的 CryptoUtil.sign 方法签名是 sign(byte[] data, byte[] privateKey)
-            // 此处代码期望的是 sign(byte[] data, PrivateKey privateKey)
-            // 您需要：
-            // 1. 修改您的 CryptoUtil.sign 以接受 PrivateKey 对象。
-            // 2. 或者，在此处更改调用为 privateKey.getEncoded()。
-            // 目前，此代码调用方式假定 CryptoUtil 匹配首选签名。
-            // byte[] signatureBytes = CryptoUtil.sign(challenge.getBytes(), privateKey);
-
-            // 修复：适配用户的 CryptoUtil.sign(byte[] data, byte[] privateKey)
-            byte[] signatureBytes = CryptoUtil.sign(challenge.getBytes(), privateKey.getEncoded());
-
-
-            String signatureBase64 = Base64.getEncoder().encodeToString(signatureBytes); // 将签名编码为Base64
-
-            // 修复：使用 HashMap 替代 Map.of() 以兼容旧版Java
-            Map<String, String> response = new HashMap<>();
-            response.put("did", didString);
-            response.put("challenge", challenge);
-            response.put("signatureBase64", signatureBase64);
-
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            logger.error("生成签名时出错: ", e);
-            return CommonUtil.getResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(), "生成签名失败: " + e.getMessage(), null);
-        }
-    }
-
-    /**
-     * 验证DID的控制权。
-     * @param didString 要验证的DID。
-     * @param challenge 用于验证的挑战字符串。
-     * @param signatureBase64 对挑战的签名 (Base64编码)。
-     * @param publicKeyId (可选) DID文档中用于签名的公钥ID。
-     * @return 验证结果。
-     */
-    @PostMapping("/verify-did")
-    public ResponseEntity<?> verifyDid(
-            @RequestParam String didString,
-            @RequestParam String challenge,
-            @RequestParam String signatureBase64,
-            @RequestParam(required = false) String publicKeyId) {
-
-        boolean isValid = didAuthenticationService.verifyDidControl(didString, challenge, signatureBase64, publicKeyId);
-        if (isValid) {
-            return CommonUtil.getResponse(HttpStatus.OK.value(), "DID 验证成功: " + didString, null);
+    public ResponseEntity<Set<String>> listDids() {
+        // 调用服务获取所有 DID
+        Set<String> dids = didService.getAllDids();
+        if (dids != null) {
+            // 返回 200 OK 和 DID 集合
+            return ResponseEntity.ok(dids);
         } else {
-            return CommonUtil.getResponse(HttpStatus.UNAUTHORIZED.value(), "DID 验证失败: " + didString, null);
+            // 理论上不应发生，除非服务初始化注册表失败
+            return ResponseEntity.ok(Collections.emptySet()); // 返回空集合
+        }
+    }
+
+    /**
+     * (演示端点) 检索上次生成的密钥对的公钥的端点。
+     * **警告：** 这仅用于演示目的。
+     *
+     * @return 包含 Base64 编码公钥或错误消息的 ResponseEntity。
+     */
+    @GetMapping("/showPublicKey")
+    public ResponseEntity<String> showLastPublicKey() {
+        // 检查是否已通过 /did/create 在此会话中生成密钥对
+        if (lastGeneratedKeyPair != null) {
+            // 获取公钥并进行 Base64 编码
+            String publicKeyEncoded = Base64.getEncoder().encodeToString(lastGeneratedKeyPair.getPublic().getEncoded());
+            // 返回 200 OK 和公钥字符串
+            return ResponseEntity.ok(publicKeyEncoded);
+        } else {
+            // 如果尚未生成密钥对，返回 404 Not Found
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("此会话中尚未通过 /did/create 生成密钥对。");
+        }
+    }
+
+    // --- 用于验证请求的内部 DTO 类 ---
+    static class VerificationRequest {
+        public String did; // DID 字符串
+        public String challenge; // 挑战字符串
+        public String signatureBase64; // Base64 编码的签名
+        public String keyId; // (可选) 用于签名的公钥 ID
+
+        // Getters 和 Setters...
+        public String getDid() { return did; }
+        public void setDid(String did) { this.did = did; }
+        public String getChallenge() { return challenge; }
+        public void setChallenge(String challenge) { this.challenge = challenge; }
+        public String getSignatureBase64() { return signatureBase64; }
+        public void setSignatureBase64(String signatureBase64) { this.signatureBase64 = signatureBase64; }
+        public String getKeyId() { return keyId; }
+        public void setKeyId(String keyId) { this.keyId = keyId; }
+    }
+
+    /**
+     * 使用挑战-响应签名验证 DID 控制权的端点。
+     *
+     * @param request 包含 did、challenge、signatureBase64 和可选 keyId 的请求体。
+     * @return 指示成功 (200 OK) 或失败 (401 Unauthorized) 的 ResponseEntity。
+     */
+    @PostMapping("/verifyControl")
+    public ResponseEntity<String> verifyControl(@RequestBody VerificationRequest request) {
+        // 基本的请求体验证
+        if (request == null || request.getDid() == null || request.getChallenge() == null || request.getSignatureBase64() == null) {
+            return ResponseEntity.badRequest().body("请求体中缺少必填字段 (did, challenge, signatureBase64)");
+        }
+        // 调用认证服务进行验证
+        boolean isValid = didAuthenticationService.verifyDidControl(
+                request.getDid(),
+                request.getChallenge(),
+                request.getSignatureBase64(),
+                request.getKeyId() // keyId 可以为 null
+        );
+        if (isValid) {
+            // 验证成功，返回 200 OK
+            return ResponseEntity.ok("DID 验证成功: " + request.getDid());
+        } else {
+            // 验证失败，返回 401 Unauthorized
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("DID 验证失败: " + request.getDid());
+        }
+    }
+
+    /**
+     * (演示端点) 使用上次生成的私钥对默认挑战进行签名。
+     * **警告：** 以这种方式暴露签名是不安全的。仅用于演示目的。
+     * @return Base64 编码的签名或错误消息。
+     */
+    @GetMapping("/signChallenge")
+    public ResponseEntity<String> signDefaultChallenge() {
+        // 检查是否已生成密钥对和 DID
+        if (lastGeneratedKeyPair == null || lastGeneratedDid == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("此会话中尚未通过 /did/create 生成密钥对或创建 DID。");
+        }
+        // 定义一个默认的挑战字符串
+        String challenge = "default-challenge-for-" + lastGeneratedDid;
+        try {
+            // 根据密钥类型确定签名算法 (当前为 RSA)
+            String algorithm = "SHA256withRSA"; // RSA 的标准签名算法
+            // 如果切换回 EC, 使用 "SHA256withECDSA"
+            // 如果使用 Ed25519 (配合 BouncyCastle), 使用 "EdDSA"
+
+            // 创建签名对象
+            Signature sig = Signature.getInstance(algorithm);
+            // 使用私钥初始化签名
+            sig.initSign(lastGeneratedKeyPair.getPrivate());
+            // 更新要签名的数据 (挑战字符串的 UTF-8 字节)
+            sig.update(challenge.getBytes(StandardCharsets.UTF_8));
+            // 执行签名操作
+            byte[] signatureBytes = sig.sign();
+            // 将签名结果进行 Base64 编码
+            String signatureBase64 = Base64.getEncoder().encodeToString(signatureBytes);
+
+            System.out.println("已使用 " + algorithm + " 对挑战 '" + challenge + "' 进行签名");
+            // 返回 200 OK 和 Base64 编码的签名
+            return ResponseEntity.ok(signatureBase64);
+
+        } catch (Exception e) {
+            // 捕获签名过程中可能出现的异常
+            System.err.println("对挑战进行签名时出错: " + e.getMessage());
+            e.printStackTrace();
+            // 返回 500 Internal Server Error
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("对挑战进行签名时出错: " + e.getMessage());
         }
     }
 }

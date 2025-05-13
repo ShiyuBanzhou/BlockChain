@@ -2,13 +2,72 @@ package com.bjut.blockchain.web.util;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.PublicKey;
+import java.util.Base64;
+import java.util.UUID;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class CommonUtil{
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    // ObjectMapper 是线程安全的，可以作为静态实例重用
+    private static final ObjectMapper objectMapper = new ObjectMapper()
+            .enable(SerializationFeature.INDENT_OUTPUT); // 可选：使 JSON 输出更易读
+
+    /**
+     * 生成基于 UUID 的随机字符串，移除连字符。
+     *
+     * @return 不含连字符的 UUID 字符串。
+     */
+    public static String generateUuid() {
+        return UUID.randomUUID().toString().replaceAll("-", "");
+    }
+
+    /**
+     * 将公钥 PublicKey 对象转换为 Base64 编码的字符串。
+     *
+     * @param publicKey 要编码的公钥对象。
+     * @return Base64 编码的公钥字符串。
+     */
+    public static String keyToString(PublicKey publicKey) {
+        byte[] keyBytes = publicKey.getEncoded();
+        return Base64.getEncoder().encodeToString(keyBytes);
+    }
+
+    /**
+     * 将对象转换为 JSON 字符串。
+     * 使用 Jackson ObjectMapper 进行序列化。
+     *
+     * @param obj 要转换为 JSON 的对象。
+     * @return JSON 格式的字符串。
+     * @throws JsonProcessingException 如果序列化过程中发生错误。
+     */
+    public static String getJson(Object obj) throws JsonProcessingException {
+        if (obj == null) {
+            return null;
+        }
+        return objectMapper.writeValueAsString(obj);
+    }
+
+    /**
+     * 计算给定字符串的 SHA-256 哈希值。
+     * 内部调用 CryptoUtil 的 applySha256 方法。
+     *
+     * @param input 要计算哈希的输入字符串。
+     * @return 输入字符串的 SHA-256 哈希值（通常为十六进制字符串）。
+     */
+    public static String calculateHash(String input) {
+        if (input == null) {
+            // 或者根据需要抛出异常
+            return null;
+        }
+        // 调用 CryptoUtil 中已有的 SHA-256 方法
+        return CryptoUtil.applySha256(input);
+    }
     /**
      * 获取本地ip
      * @return
