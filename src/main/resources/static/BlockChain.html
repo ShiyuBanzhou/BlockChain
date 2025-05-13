@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链操作页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+        .button-group {
+            margin-bottom: 20px;
+        }
+        .button-group button {
+            margin-right: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .display-box {
+            width: 100%;
+            height: 170px;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px; /* 调整了字体大小以便更好地显示 */
+            white-space: pre-wrap; /* 允许长文本换行 */
+            word-break: break-all; /* 允许单词内换行 */
+        }
+        .display-box2 {
+            width: 100%;
+            height: 300px;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px; /* 调整了字体大小以便更好地显示 */
+            white-space: pre-wrap; /* 允许长文本换行 */
+            word-break: break-all; /* 允许单词内换行 */
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <div class="button-group">
+        <button id="getCertificateBtn">获取证书 (DID)</button>
+        <button id="createBlockchainBtn">创建创世块 (Block)</button>
+        <button id="mineBtn">挖矿 (Block)</button>
+        <button id="showNowBlockchain">当前节点区块链 (Block)</button>
+        <button id="showBlockchainBtn">显示交易数据 (Block)</button>
+        <button id="listDidsBtn">列出所有DID</button>
+    </div>
+    <div class="display-box" id="displayBox1">显示框1 (主要用于DID相关操作结果)</div>
+    <div class="display-box2" id="displayBox2">主要用于区块链和交易数据)</div>
+</div>
+
+<script>
+    // 定义后端API的基础URL
+    const API_BASE_URL = 'http://localhost:8080/api'; // 统一的API基础路径
+
+    // 辅助函数用于在显示框中显示JSON数据
+    function displayJsonInBox(boxId, data, successMessagePrefix = '') {
+        const box = document.getElementById(boxId);
+        if (typeof data === 'object') {
+            box.innerText = successMessagePrefix + JSON.stringify(data, null, 2);
+        } else {
+            box.innerText = successMessagePrefix + data;
+        }
+    }
+
+    // 辅助函数用于处理API错误
+    function handleApiError(boxId, error, errorMessagePrefix = '') {
+        console.error(errorMessagePrefix, error);
+        const box = document.getElementById(boxId);
+        let message = errorMessagePrefix + (error.message || '未知错误');
+        // 尝试从响应中获取更具体的错误信息
+        if (error.response && typeof error.response.text === 'function') {
+            error.response.text().then(text => {
+                try {
+                    const jsonError = JSON.parse(text);
+                    message = errorMessagePrefix + (jsonError.message || text.substring(0,200));
+                } catch (e) {
+                    if (text.toLowerCase().includes("<!doctype html")) {
+                        message = errorMessagePrefix + "服务器返回了HTML页面，可能是API路径错误或认证问题导致重定向。";
+                    } else {
+                        message = errorMessagePrefix + "服务器返回非JSON错误: " + text.substring(0, 200);
+                    }
+                }
+                box.innerText = message;
+            }).catch(() => box.innerText = message);
+        } else {
+            box.innerText = message;
+        }
+    }
+
+
+    // 获取证书按钮点击事件 (假设这是创建一个DID)
+    document.getElementById('getCertificateBtn').addEventListener('click', function () {
+        fetch(`${API_BASE_URL}/did/create`, {
+            method: 'POST',
+            credentials: 'include' // <--- 添加: 发送凭据 (cookies)
+        })
+            .then(response => {
+                if (!response.ok) {
+                    // 将 response 对象传递给错误处理函数，以便它可以尝试读取响应体
+                    const err = new Error(`HTTP error! status: ${response.status}`);
+                    err.response = response;
+                    throw err;
+                }
+                return response.json();
+            })
+            .then(data => {
+                displayJsonInBox('displayBox1', data, 'DID 创建成功: \n');
+            })
+            .catch(error => {
+                handleApiError('displayBox1', error, 'DID 创建失败: ');
+            });
+    });
+
+    // 列出所有DID按钮点击事件
+    document.getElementById('listDidsBtn').addEventListener('click', function() {
+        fetch(`${API_BASE_URL}/did/list`, {
+            credentials: 'include' // <--- 添加: 发送凭据 (cookies)
+        })
+            .then(response => {
+                if (!response.ok) {
+                    const err = new Error(`HTTP error! status: ${response.status}`);
+                    err.response = response;
+                    throw err;
+                }
+                return response.json();
+            })
+            .then(data => {
+                displayJsonInBox('displayBox1', data, '所有 DIDs: \n');
+            })
+            .catch(error => {
+                handleApiError('displayBox1', error, '列出 DID 失败: ');
+            });
+    });
+
+
+    // --- 以下是区块链相关操作，假设它们在 BlockController 中，路径为 /api/blocks/... ---
+
+    // 创建创世块按钮点击事件
+    document.getElementById('createBlockchainBtn').addEventListener('click', function () {
+        fetch(`${API_BASE_URL}/blocks/genesis`, {
+            method: 'POST',
+            credentials: 'include' // <--- 添加: 发送凭据 (cookies)
+        })
+            .then(response => {
+                if (!response.ok) {
+                    const err = new Error(`HTTP error! status: ${response.status}`);
+                    err.response = response;
+                    throw err;
+                }
+                return response.json(); // 假设成功返回整个链或创世块
+            })
+            .then(data => {
+                // alert('创世块创建操作已触发'); // 可以用下面的displayJsonInBox替代
+                displayJsonInBox('displayBox2', data, '创世块创建结果: \n');
+            })
+            .catch(error => {
+                // alert('创世块创建失败: ' + error.message);
+                handleApiError('displayBox2', error, '创世块创建失败: ');
+            });
+    });
+
+    // 挖矿按钮点击事件
+    document.getElementById('mineBtn').addEventListener('click', function () {
+        fetch(`${API_BASE_URL}/blocks/mine`, {
+            method: 'POST',
+            credentials: 'include' // <--- 添加: 发送凭据 (cookies)
+        })
+            .then(response => {
+                if (!response.ok) {
+                    const err = new Error(`HTTP error! status: ${response.status}`);
+                    err.response = response;
+                    throw err;
+                }
+                return response.json(); // 假设挖矿成功返回新区块
+            })
+            .then(data => {
+                // alert('挖矿成功!');
+                displayJsonInBox('displayBox2', data, '挖矿成功，新区块: \n');
+            })
+            .catch(error => {
+                // alert('挖矿操作失败: ' + error.message);
+                handleApiError('displayBox2', error, '挖矿失败: ');
+            });
+    });
+
+
+    // 显示当前节点区块链数据按钮点击事件
+    document.getElementById('showNowBlockchain').addEventListener('click', function () {
+        fetch(`${API_BASE_URL}/blocks/chain`, {
+            credentials: 'include' // <--- 添加: 发送凭据 (cookies)
+        })
+            .then(response => {
+                if (!response.ok) {
+                    const err = new Error(`HTTP error! status: ${response.status}`);
+                    err.response = response;
+                    throw err;
+                }
+                return response.json();
+            })
+            .then(data => {
+                displayJsonInBox('displayBox2', data, '当前节点区块链: \n');
+            })
+            .catch(error => {
+                handleApiError('displayBox2', error, '显示当前节点区块链失败: ');
+            });
+    });
+
+
+    // 显示交易数据按钮点击事件 (假设是获取所有已打包的交易)
+    document.getElementById('showBlockchainBtn').addEventListener('click', function () {
+        // 假设获取交易数据的API在 BlockController 中，路径为 /api/blocks/transactions/packed
+        fetch(`${API_BASE_URL}/blocks/transactions/packed`, { // <--- 路径根据您的BlockController调整
+            credentials: 'include' // <--- 添加: 发送凭据 (cookies)
+        })
+            .then(response => {
+                if (!response.ok) {
+                    const err = new Error(`HTTP error! status: ${response.status}`);
+                    err.response = response;
+                    throw err;
+                }
+                return response.json();
+            })
+            .then(data => {
+                displayJsonInBox('displayBox2', data, '已打包交易: \n');
+            })
+            .catch(error => {
+                handleApiError('displayBox2', error, '显示已打包交易数据失败: ');
+            });
+    });
+</script>
+</body>
+</html>
