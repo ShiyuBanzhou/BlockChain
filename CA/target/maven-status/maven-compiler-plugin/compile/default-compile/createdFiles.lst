@@ -1,3 +1,4 @@
+com\bjut\ca\server\impl\CAimpl$RevokedCertificateEntry.class
 com\bjut\ca\server\impl\PublicKeyWrapper.class
 com\bjut\ca\Config\Knife4jConfig.class
 com\bjut\ca\Util\X509CertificateUtil.class

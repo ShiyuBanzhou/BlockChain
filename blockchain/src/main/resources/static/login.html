@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DID 登录 - 区块链应用 (Web Crypto API + IndexedDB)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .login-container { min-width: 380px; }
+        .hidden { display: none; }
+        textarea { white-space: pre; overflow-wrap: normal; overflow-x: scroll; font-size: 0.8em; }
+        .code-block {
+            background-color: #f0f0f0;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85em;
+            word-break: break-all;
+            margin-top: 4px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .button-action {
+            background-color: #4F46E5; /* Indigo */
+            color: white;
+        }
+        .button-action:hover {
+            background-color: #4338CA;
+        }
+        .button-danger {
+            background-color: #DC2626; /* Red */
+            color: white;
+        }
+        .button-danger:hover {
+            background-color: #B91C1C;
+        }
+        #keyManagementArea button, #keyManagementArea select { margin-top: 8px; }
+        #storedKeysDisplay ul { list-style-type: none; padding-left: 0; }
+        #storedKeysDisplay li { padding: 5px; border-bottom: 1px solid #eee; cursor: pointer; }
+        #storedKeysDisplay li:hover { background-color: #e9e9e9; }
+        #storedKeysDisplay li.selected-did { background-color: #d1d5db; font-weight: bold; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<div class="login-container bg-white p-8 md:p-12 rounded-lg shadow-xl w-full max-w-lg">
+    <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">DID 身份认证 (浏览器密钥 - IndexedDB)</h2>
+
+    <div id="keyManagementArea" class="mb-6 p-4 border rounded-md bg-slate-50">
+        <h3 class="text-lg font-semibold text-gray-700 mb-2">浏览器密钥与DID管理 (IndexedDB)</h3>
+        <button id="generateAndRegisterDidButton" class="w-full py-2 px-4 text-sm button-action rounded-md">1. 生成新密钥对并注册DID</button>
+
+        <div id="storedKeysSection" class="mt-3">
+            <label for="didSelector" class="block text-sm font-medium text-gray-700">选择已存储的DID进行操作:</label>
+            <select id="didSelector" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                <option value="">-- 无可用密钥 --</option>
+            </select>
+            <div class="flex space-x-2 mt-2">
+                <button id="selectDidButton" class="flex-1 py-2 px-4 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md">使用选中DID登录</button>
+                <button id="deleteSelectedDidButton" class="flex-1 py-2 px-4 text-sm button-danger rounded-md">删除选中DID和密钥</button>
+            </div>
+        </div>
+        <p class="mt-2 text-xs text-gray-500">密钥存储在浏览器的IndexedDB中，刷新页面后依然可用（除非清除浏览器数据）。</p>
+    </div>
+
+    <div id="step1DidInput">
+        <form id="didForm" class="space-y-6">
+            <div>
+                <label for="didUiInput" class="block text-sm font-medium text-gray-700 mb-1">要登录的 DID:</label>
+                <input type="text" id="didUiInput" name="didUiInput" required readonly
+                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-100 focus:outline-none sm:text-sm"
+                       placeholder="请从上方选择或生成DID">
+            </div>
+            <div>
+                <button id="getChallengeButton" type="submit"
+                        class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                    2. 获取挑战
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div id="step2SignChallenge" class="hidden space-y-6">
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">DID:</label>
+            <p id="displayDid" class="code-block"></p>
+        </div>
+        <div>
+            <label for="challenge" class="block text-sm font-medium text-gray-700 mb-1">待签名挑战:</label>
+            <textarea id="challenge" name="challenge" readonly
+                      class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-20"></textarea>
+        </div>
+        <div>
+            <label for="keyIdUiInput" class="block text-sm font-medium text-gray-700 mb-1">用于签名的密钥 ID:</label>
+            <input type="text" id="keyIdUiInput" name="keyIdUiInput" readonly
+                   class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-100 focus:outline-none sm:text-sm">
+        </div>
+        <div>
+            <button id="signChallengeClientSideButton" type="button"
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium button-action focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                3. 使用浏览器密钥签名挑战
+            </button>
+        </div>
+        <div>
+            <label for="signature" class="block text-sm font-medium text-gray-700 mb-1">签名 (Base64):</label>
+            <textarea id="signature" name="signature" readonly
+                      class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-20"></textarea>
+        </div>
+        <div>
+            <button id="verifyButton" type="button"
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out">
+                4. 验证登录
+            </button>
+            <button id="backToDidSelectionButton" type="button"
+                    class="mt-2 w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                返回选择DID
+            </button>
+        </div>
+    </div>
+
+    <div id="messageArea" class="mt-6 text-center text-sm"></div>
+    <div id="createdDidInfo" class="hidden mt-2 p-3 bg-gray-100 rounded text-xs space-y-1"></div>
+
+</div>
+
+<script>
+    // --- DOM 元素获取 ---
+    const generateAndRegisterDidButton = document.getElementById('generateAndRegisterDidButton');
+    const didSelector = document.getElementById('didSelector');
+    const selectDidButton = document.getElementById('selectDidButton');
+    const deleteSelectedDidButton = document.getElementById('deleteSelectedDidButton');
+
+    const didUiInput = document.getElementById('didUiInput'); // UI上显示和用于获取挑战的DID输入框
+    const didForm = document.getElementById('didForm');
+
+    const step1DidInput = document.getElementById('step1DidInput');
+    const step2SignChallenge = document.getElementById('step2SignChallenge');
+    const displayDidElem = document.getElementById('displayDid');
+    const challengeElem = document.getElementById('challenge');
+    const keyIdUiInput = document.getElementById('keyIdUiInput'); // UI上显示KeyID的输入框
+    const signChallengeClientSideButton = document.getElementById('signChallengeClientSideButton');
+    const signatureElem = document.getElementById('signature');
+    const verifyButton = document.getElementById('verifyButton');
+    const backToDidSelectionButton = document.getElementById('backToDidSelectionButton');
+
+    const messageArea = document.getElementById('messageArea');
+    const createdDidInfo = document.getElementById('createdDidInfo');
+
+    const SPRING_BOOT_API_BASE_URL = 'http://localhost:8080/api/did';
+
+    // --- IndexedDB 配置 ---
+    const DB_NAME = "DIDKeyStore";
+    const DB_VERSION = 1;
+    const OBJECT_STORE_NAME = "userKeys"; // 存储对象: {did: string, keyId: string, publicKeyBase64: string, privateKey: CryptoKey}
+    let db; // IndexedDB 数据库实例
+
+    // --- IndexedDB 辅助函数 ---
+    function openDb() {
+        return new Promise((resolve, reject) => {
+            if (db) {
+                resolve(db);
+                return;
+            }
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = (event) => reject("打开IndexedDB数据库失败: " + event.target.errorCode);
+            request.onsuccess = (event) => {
+                db = event.target.result;
+                resolve(db);
+            };
+            request.onupgradeneeded = (event) => {
+                const storeDb = event.target.result;
+                if (!storeDb.objectStoreNames.contains(OBJECT_STORE_NAME)) {
+                    // 主键是 did 字符串
+                    const objectStore = storeDb.createObjectStore(OBJECT_STORE_NAME, { keyPath: "did" });
+                    // 可以为其他字段创建索引，如果需要查询的话
+                    objectStore.createIndex("keyId", "keyId", { unique: false });
+                    console.log("IndexedDB object store '" + OBJECT_STORE_NAME + "' 已创建.");
+                }
+            };
+        });
+    }
+
+    function addKeyToDb(keyInfo) { // keyInfo: {did, keyId, publicKeyBase64, privateKey}
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readwrite");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.put(keyInfo); // put 会覆盖同主键的记录
+                request.onsuccess = () => resolve();
+                request.onerror = (event) => reject("添加密钥到IndexedDB失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function getKeyFromDb(did) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readonly");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.get(did);
+                request.onsuccess = (event) => resolve(event.target.result); // 如果没找到会是undefined
+                request.onerror = (event) => reject("从IndexedDB获取密钥失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function getAllKeysFromDb() {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readonly");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.getAll(); // 获取所有记录
+                request.onsuccess = (event) => resolve(event.target.result);
+                request.onerror = (event) => reject("从IndexedDB获取所有密钥失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function deleteKeyFromDb(did) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readwrite");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.delete(did);
+                request.onsuccess = () => resolve();
+                request.onerror = (event) => reject("从IndexedDB删除密钥失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+
+    // --- Web Crypto API 辅助函数 (与之前类似) ---
+    function arrayBufferToBase64(buffer) { /* ... */ } // 确保此函数已定义
+    async function generateRsaKeyPair() { /* ... */ } // 确保此函数已定义
+    async function exportPublicKeyAsBase64Spki(publicKey) { /* ... */ } // 确保此函数已定义
+    // (这些函数可以从您之前提供的代码中复制过来，这里省略以保持简洁)
+    // 粘贴之前的 arrayBufferToBase64, generateRsaKeyPair, exportPublicKeyAsBase64Spki 实现到这里...
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    async function generateRsaKeyPair() {
+        return await window.crypto.subtle.generateKey(
+            {
+                name: "RSASSA-PKCS1-v1_5",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+                hash: "SHA-256",
+            },
+            true,
+            ["sign", "verify"]
+        );
+    }
+
+    async function exportPublicKeyAsBase64Spki(publicKey) {
+        const exportedSpki = await window.crypto.subtle.exportKey("spki", publicKey);
+        return arrayBufferToBase64(exportedSpki);
+    }
+
+
+    // --- 应用程序状态 ---
+    let currentChallengeText = '';
+    let currentActiveDid = null; // 当前用于登录流程的DID字符串
+    let currentActiveKeyId = null; // 当前用于登录流程的KeyID字符串
+
+    // --- UI 更新函数 ---
+    async function populateDidSelector() {
+        try {
+            const keys = await getAllKeysFromDb();
+            didSelector.innerHTML = ''; // 清空选项
+            if (keys && keys.length > 0) {
+                keys.forEach(keyInfo => {
+                    const option = document.createElement('option');
+                    option.value = keyInfo.did;
+                    option.textContent = `${keyInfo.did} (KeyID: ${keyInfo.keyId})`;
+                    didSelector.appendChild(option);
+                });
+                // 默认选中第一个，或者之前选中的（如果实现了状态保持）
+                if (keys.length > 0 && !currentActiveDid) {
+                    // selectDidForOperation(keys[0].did); // 可以默认选中第一个
+                }
+            } else {
+                const option = document.createElement('option');
+                option.value = "";
+                option.textContent = "-- 无可用密钥 --";
+                didSelector.appendChild(option);
+            }
+        } catch (error) {
+            console.error("填充DID选择器失败:", error);
+            messageArea.textContent = "加载已存储DID列表失败: " + error.message;
+            messageArea.classList.add('text-red-600');
+        }
+    }
+
+    function selectDidForOperation(didString) {
+        if (!didString) {
+            currentActiveDid = null;
+            currentActiveKeyId = null;
+            didUiInput.value = "";
+            keyIdUiInput.value = "";
+            messageArea.textContent = "请选择或生成一个DID。";
+            return;
+        }
+        getKeyFromDb(didString).then(keyInfo => {
+            if (keyInfo) {
+                currentActiveDid = keyInfo.did;
+                currentActiveKeyId = keyInfo.keyId;
+                didUiInput.value = keyInfo.did;
+                keyIdUiInput.value = keyInfo.keyId; // 也预填充到签名步骤的keyId输入框
+                messageArea.textContent = `已选中DID: ${keyInfo.did}`;
+                messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+            } else {
+                messageArea.textContent = `错误：在IndexedDB中未找到DID ${didString} 的密钥信息。`;
+                messageArea.classList.add('text-red-600');
+                currentActiveDid = null;
+                currentActiveKeyId = null;
+            }
+        }).catch(error => {
+            console.error(`选择DID ${didString} 时出错:`, error);
+            messageArea.textContent = `选择DID时出错: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        });
+    }
+
+
+    // --- 事件监听器 ---
+
+    // 页面加载时打开数据库并填充选择器
+    window.addEventListener('load', async () => {
+        try {
+            await openDb(); // 确保数据库已打开
+            await populateDidSelector(); // 填充DID下拉列表
+            console.log("IndexedDB已初始化，DID选择器已填充。");
+        } catch (error) {
+            console.error("页面加载时初始化IndexedDB或填充选择器失败:", error);
+            messageArea.textContent = "初始化应用存储失败: " + error.message;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    // 1. 生成新密钥对并注册DID
+    generateAndRegisterDidButton.addEventListener('click', async () => {
+        messageArea.textContent = '正在生成密钥对并注册新DID...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        createdDidInfo.classList.add('hidden');
+        createdDidInfo.innerHTML = '';
+
+        try {
+            const keyPair = await generateRsaKeyPair();
+            const publicKeyBase64 = await exportPublicKeyAsBase64Spki(keyPair.publicKey);
+
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ publicKeyBase64: publicKeyBase64 })
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || result.error || `创建DID失败 (状态: ${response.status})`);
+            }
+
+            const newDidString = result.didDocument.id;
+            const newKeyId = result.didDocument.authentication && result.didDocument.authentication.length > 0
+                ? result.didDocument.authentication[0]
+                : `${newDidString}#keys-1`;
+
+            const keyInfoToStore = {
+                did: newDidString,
+                keyId: newKeyId,
+                publicKeyBase64: publicKeyBase64,
+                privateKey: keyPair.privateKey // CryptoKey 对象
+            };
+            await addKeyToDb(keyInfoToStore); // 存储到IndexedDB
+            await populateDidSelector(); // 刷新下拉列表
+            selectDidForOperation(newDidString); // 自动选中新创建的
+
+            messageArea.textContent = '新DID已生成、注册并存储在浏览器IndexedDB中!';
+            messageArea.classList.add('text-green-600');
+
+            createdDidInfo.innerHTML = `
+                <p><strong>新DID:</strong> <span class="code-block">${newDidString}</span></p>
+                <p><strong>对应KeyID:</strong> <span class="code-block">${newKeyId}</span></p>
+                <p class="mt-2 text-green-700 font-semibold">密钥已安全存储在浏览器的IndexedDB中。</p>`;
+            createdDidInfo.classList.remove('hidden');
+
+        } catch (error) {
+            console.error('生成和注册DID时出错:', error);
+            messageArea.textContent = `错误: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    // "使用选中DID登录" 按钮
+    selectDidButton.addEventListener('click', () => {
+        const selectedDidValue = didSelector.value;
+        if (selectedDidValue) {
+            selectDidForOperation(selectedDidValue);
+            step1DidInput.classList.remove('hidden'); // 显示获取挑战的表单
+            messageArea.textContent = `已选择DID: ${selectedDidValue}。请获取挑战。`;
+        } else {
+            messageArea.textContent = "请从下拉列表中选择一个DID，或先生成一个。";
+            messageArea.classList.add('text-yellow-600');
+        }
+    });
+
+    // "删除选中DID和密钥" 按钮
+    deleteSelectedDidButton.addEventListener('click', async () => {
+        const didToDelete = didSelector.value;
+        if (!didToDelete) {
+            messageArea.textContent = "请先从下拉列表中选择一个要删除的DID。";
+            messageArea.classList.add('text-yellow-600');
+            return;
+        }
+        if (confirm(`确定要从浏览器IndexedDB中删除DID "${didToDelete}" 及其关联的密钥吗？此操作不可恢复。`)) {
+            try {
+                await deleteKeyFromDb(didToDelete);
+                await populateDidSelector(); // 刷新列表
+                messageArea.textContent = `DID "${didToDelete}" 已成功从浏览器存储中删除。`;
+                messageArea.className = 'mt-6 text-center text-sm text-green-600';
+                if (currentActiveDid === didToDelete) { // 如果删除的是当前选中的，则清空
+                    selectDidForOperation(null);
+                }
+            } catch (error) {
+                console.error("删除DID时出错:", error);
+                messageArea.textContent = `删除DID时出错: ${error.message}`;
+                messageArea.classList.add('text-red-600');
+            }
+        }
+    });
+
+
+    // 2. 获取挑战 (didForm 提交事件)
+    didForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        // currentActiveDid 应该在选择DID时已经设置好了
+        if (!currentActiveDid) {
+            messageArea.textContent = '请先从上方选择或生成一个DID。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+
+        messageArea.textContent = '';
+        messageArea.className = 'mt-6 text-center text-sm';
+
+        try {
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/auth/challenge`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ did: currentActiveDid }), // 使用当前激活的DID
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || result.error || `获取挑战失败 (状态: ${response.status})`);
+            }
+
+            currentChallengeText = result.challenge;
+            // keyIdUiInput 已经由 selectDidForOperation 或服务器提示填充
+            // 如果服务器返回了 keyIdHint，可以用它来更新，否则用 currentActiveKeyId
+            keyIdUiInput.value = result.keyIdHint || currentActiveKeyId || `${currentActiveDid}#keys-1`;
+
+
+            displayDidElem.textContent = currentActiveDid;
+            challengeElem.value = currentChallengeText;
+            signatureElem.value = '';
+
+            step1DidInput.classList.add('hidden');
+            step2SignChallenge.classList.remove('hidden');
+            messageArea.textContent = '已获取挑战，请使用浏览器密钥签名。';
+            messageArea.classList.add('text-blue-600');
+
+        } catch (error) {
+            console.error('获取挑战失败:', error);
+            messageArea.textContent = `获取挑战请求失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    // 3. 使用浏览器密钥签名挑战
+    signChallengeClientSideButton.addEventListener('click', async () => {
+        if (!currentActiveDid || !currentChallengeText) {
+            messageArea.textContent = '错误：没有有效的DID或挑战来进行签名。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        const keyIdForSigning = keyIdUiInput.value;
+        if (!keyIdForSigning) {
+            messageArea.textContent = '错误：请输入或确认用于签名的密钥ID。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+
+        messageArea.textContent = '正在从IndexedDB检索密钥并签名...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        try {
+            const keyInfo = await getKeyFromDb(currentActiveDid); // 从IndexedDB获取密钥信息
+            if (!keyInfo || !keyInfo.privateKey) {
+                throw new Error(`未在IndexedDB中找到与DID '${currentActiveDid}' 关联的私钥。`);
+            }
+            // 确保用于签名的keyId与当前操作的keyId一致
+            if (keyInfo.keyId !== keyIdForSigning) {
+                if (!confirm(`警告：您要用于签名的KeyID '${keyIdForSigning}' 与为DID '${currentActiveDid}' 在IndexedDB中存储的KeyID '${keyInfo.keyId}' 不符。是否仍要继续使用 '${keyIdForSigning}' (这可能导致验证失败，除非服务器DID文档中有此KeyID)？`)) {
+                    keyIdUiInput.value = keyInfo.keyId; // 恢复为存储的keyId
+                    messageArea.textContent = "操作已取消或KeyID已更正为IndexedDB中的值。";
+                    return;
+                }
+            }
+
+
+            const signatureArrayBuffer = await window.crypto.subtle.sign(
+                { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+                keyInfo.privateKey, // 使用从IndexedDB中获取的 CryptoKey 私钥对象
+                new TextEncoder().encode(currentChallengeText)
+            );
+            signatureElem.value = arrayBufferToBase64(signatureArrayBuffer);
+            messageArea.textContent = '挑战已签名！请点击“验证登录”。';
+            messageArea.classList.add('text-green-600');
+        } catch (error) {
+            console.error("客户端签名时出错:", error);
+            messageArea.textContent = `客户端签名失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    // “返回选择DID”按钮
+    backToDidSelectionButton.addEventListener('click', () => {
+        step2SignChallenge.classList.add('hidden');
+        step1DidInput.classList.remove('hidden'); //可以考虑默认隐藏，直到选了DID
+        messageArea.textContent = '请从上方选择或生成一个DID。';
+        currentActiveDid = null; // 清除当前活动DID
+        currentActiveKeyId = null;
+        didUiInput.value = ""; // 清空输入框
+        keyIdUiInput.value = "";
+    });
+
+    // 4. 验证登录
+    verifyButton.addEventListener('click', async function() {
+        const signatureBase64 = signatureElem.value;
+        const didToVerify = displayDidElem.textContent;
+        const keyIdToVerify = keyIdUiInput.value;
+
+        if (!signatureBase64 || !didToVerify || !keyIdToVerify) {
+            messageArea.textContent = '验证所需信息不完整 (DID, KeyID, 或签名)。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+
+        messageArea.textContent = '正在验证签名...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+
+        try {
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/auth/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    did: didToVerify,
+                    challenge: currentChallengeText,
+                    signatureBase64: signatureBase64,
+                    keyId: keyIdToVerify
+                }),
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || `验证失败 (状态: ${response.status})`);
+            }
+            if (result.success) {
+                messageArea.textContent = result.message || '登录成功！正在跳转...';
+                messageArea.classList.add('text-green-600');
+                setTimeout(() => { window.location.href = 'BlockChain.html'; }, 1500);
+            } else {
+                throw new Error(result.message || '登录验证失败，请检查您的签名或密钥ID。');
+            }
+        } catch (error) {
+            console.error('验证请求失败:', error);
+            messageArea.textContent = `验证请求失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+</script>
+</body>
+</html>

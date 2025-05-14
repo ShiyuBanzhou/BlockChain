@@ -23,7 +23,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                .allowedOrigins("http://localhost:63342", "http://127.0.0.1:63342", "http://localhost:8080")
+                .allowedOrigins("http://localhost:63342", "http://127.0.0.1:63342", "http://localhost:8080") // 确保您的前端源被允许
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD")
                 .allowedHeaders("*")
                 .allowCredentials(true);
@@ -37,9 +37,9 @@ public class WebConfig implements WebMvcConfigurer {
                         // DID 认证流程API
                         "/api/did/auth/challenge",
                         "/api/did/auth/verify",
-                        // DID 管理API (创建和解析通常需要根据实际需求决定是否公开)
-                        // "/api/did/create", // 如果创建DID需要认证，则不应排除
-                        // "/api/did/resolve/**", // DID解析通常是公开的
+                        // DID 管理API
+                        "/api/did/create",      // *** FIX: 允许创建DID的API匿名访问 ***
+                        "/api/did/resolve/**",  // DID解析通常是公开的
                         "/api/did/logout",      // 登出
                         // 登录页面本身
                         "/login.html",
@@ -47,7 +47,7 @@ public class WebConfig implements WebMvcConfigurer {
                         "/BlockChain.html",
                         // Spring Boot 默认错误处理页面
                         "/error",
-                        // 静态资源
+                        // 静态资源 (确保路径正确，例如 /static/css/** 如果文件在 src/main/resources/static/css下)
                         "/css/**",
                         "/js/**",
                         "/images/**",
@@ -61,11 +61,12 @@ public class WebConfig implements WebMvcConfigurer {
         @Override
         public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws IOException {
             String requestUri = request.getRequestURI();
-            logger.info("AuthInterceptor: 接收到请求 -> URI: {}, 方法: {}", requestUri, request.getMethod());
+            // 使用 logger.debug 或 logger.trace 记录更详细的请求信息，避免在生产环境中过多INFO日志
+            logger.trace("AuthInterceptor: 接收到请求 -> URI: {}, 方法: {}", requestUri, request.getMethod());
 
             // 对于CORS预检请求 (OPTIONS)，直接放行
             if (HttpMethod.OPTIONS.matches(request.getMethod())) {
-                logger.info("AuthInterceptor: OPTIONS请求，直接放行 URI: {}", requestUri);
+                logger.trace("AuthInterceptor: OPTIONS请求，直接放行 URI: {}", requestUri);
                 response.setStatus(HttpServletResponse.SC_OK);
                 return true;
             }
@@ -73,52 +74,42 @@ public class WebConfig implements WebMvcConfigurer {
             HttpSession session = request.getSession(false); // 获取现有会话，如果不存在则不创建
 
             if (session != null) {
-                logger.info("AuthInterceptor: 找到现有会话 ID: {}", session.getId());
+                logger.trace("AuthInterceptor: 找到现有会话 ID: {}", session.getId());
                 Object loggedInUser = session.getAttribute("loggedInUserDid");
                 if (loggedInUser != null) {
-                    logger.info("AuthInterceptor: 会话已认证，用户DID: '{}'。允许访问 URI: {}", loggedInUser, requestUri);
+                    logger.trace("AuthInterceptor: 会话已认证，用户DID: '{}'。允许访问 URI: {}", loggedInUser, requestUri);
                     return true; // 用户已登录，允许访问
                 } else {
                     logger.warn("AuthInterceptor: 会话存在 (ID: {}) 但未找到 'loggedInUserDid' 属性。视为未认证。 URI: {}", session.getId(), requestUri);
                 }
             } else {
-                logger.info("AuthInterceptor: 未找到活动会话。视为未认证。 URI: {}", requestUri);
+                logger.trace("AuthInterceptor: 未找到活动会话。视为未认证。 URI: {}", requestUri);
             }
 
             // 用户未登录或会话中无有效标记
-            logger.warn("AuthInterceptor: 未授权访问尝试。 URI: {}", requestUri);
+            // 注意：Spring MVC的路径匹配机制会优先处理 excludePathPatterns。
+            // 如果一个路径被排除了，这个 preHandle 方法仍然会针对该路径执行，
+            // 但由于Spring已经决定放行，这里的逻辑主要是针对那些*未被排除*且需要认证的路径。
+            // 对于已经被Spring排除的路径，此拦截器不应该再将其重定向或返回401。
+            // 因此，下面的逻辑主要是在 "双重检查" 或处理那些未被 `excludePathPatterns` 覆盖但又需要特殊处理的场景。
+            // 但通常，依赖 `excludePathPatterns` 是主要机制。
 
-            // 对于API请求 (所有受保护的API都应该以 /api/ 开头，并且不在排除列表中)
-            // 注意：Spring MVC的路径匹配机制会处理 excludePathPatterns，
-            // 所以如果一个API路径被排除了，拦截器逻辑到这里时，它仍然会执行，但我们通常依赖于Spring的排除。
-            // 这里的检查是双重保险，并确保对未排除的API进行正确处理。
+            // 如果请求是API请求 (通常以 /api/ 开头) 且未被排除
             if (requestUri.startsWith("/api/")) {
-                // 检查此API路径是否明确在排除列表中（虽然Spring应该已经处理了，但可以加一道保险）
-                // 这个检查逻辑可以更复杂，但核心是如果它是一个应该被保护的API，则返回401
-                boolean isExcludedApi = requestUri.equals("/api/did/auth/challenge") ||
-                        requestUri.equals("/api/did/auth/verify") ||
-                        requestUri.equals("/api/did/logout");
-                // 您可能还需要排除 /api/did/create 如果它不需要登录
-
-                if (isExcludedApi) {
-                    logger.info("AuthInterceptor: API URI '{}' 在排除列表中，允许匿名访问。", requestUri);
-                    return true; // 允许访问已排除的API
-                } else {
-                    logger.warn("AuthInterceptor: 拦截到未授权的API请求 URI: {}。返回401。", requestUri);
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.setContentType("application/json");
-                    response.setCharacterEncoding("UTF-8");
-                    response.getWriter().write("{\"success\": false, \"message\": \"访问未授权 (401)，请先登录或提供有效凭证。API: " + requestUri + "\"}");
-                    return false; // 阻止未授权的API请求
-                }
+                // 此处我们假设 excludePathPatterns 已经正确处理了所有应该被排除的API。
+                // 如果代码执行到这里，意味着这是一个 *未被排除* 的API请求，而用户又未认证。
+                logger.warn("AuthInterceptor: 拦截到未授权的API请求 URI: {}。返回401。", requestUri);
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                // 返回更简洁的错误信息给客户端
+                response.getWriter().write("{\"success\": false, \"message\": \"访问未授权 (401)，请先登录或提供有效凭证。\"}");
+                return false; // 阻止未授权的API请求
             }
 
             // 对于非API的、受保护的页面请求（即不在排除列表中的HTML页面）
-            // BlockChain.html 已在排除列表中，所以它不会走到这里被重定向。
-            // login.html 也在排除列表中。
-            // 如果有其他如 /admin/dashboard.html 这样的页面且未排除，则会被重定向。
             logger.info("AuthInterceptor: 非API请求 URI: {}，且用户未认证。重定向到登录页面。", requestUri);
-            response.sendRedirect(request.getContextPath() + "/login.html");
+            response.sendRedirect(request.getContextPath() + "/login.html"); // 确保getContextPath()是正确的
             return false; // 阻止请求并重定向
         }
     }

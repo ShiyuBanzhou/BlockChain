@@ -95,7 +95,7 @@
   </dependencies>
 
   <build>
-    <finalName>node1</finalName>
+    <finalName>node3</finalName>
 
     <plugins>
       <plugin>
