@@ -67,6 +67,43 @@
 </div>
 
 <script>
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+    async function generateClientKeyPairForDidCreation() {
+        try {
+            const keyPair = await window.crypto.subtle.generateKey(
+                {
+                    name: "RSASSA-PKCS1-v1_5",
+                    modulusLength: 2048,
+                    publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+                    hash: {name: "SHA-256"},
+                },
+                true, // extractable 设为 true 以便能导出公钥
+                ["sign", "verify"]
+            );
+            const publicKeySpki = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+            const publicKeyBase64 = arrayBufferToBase64(publicKeySpki);
+
+            // 重要提示：此处的 keyPair.privateKey 是 CryptoKey 对象。
+            // 在实际应用中，客户端需要安全地管理这个私钥。
+            // 对于“获取证书”这个场景，我们主要关心的是公钥。
+            console.log("BlockChain.html: 客户端为创建新DID生成了公钥: ", publicKeyBase64.substring(0,30) + "...");
+            // 如果需要，可以将私钥临时存起来用于后续操作，但要注意安全风险。
+            // window.tempLastGeneratedPrivateKeyOnBlockChainPage = keyPair.privateKey;
+
+            return { publicKeyBase64: publicKeyBase64 /*, privateKey: keyPair.privateKey */ };
+        } catch (error) {
+            console.error("BlockChain.html: 客户端生成密钥对失败:", error);
+            throw error; // 将错误抛出，让调用者处理
+        }
+    }
     // 定义后端API的基础URL
     const API_BASE_URL = 'http://localhost:8080/api'; // 统一的API基础路径
 
@@ -107,26 +144,67 @@
 
 
     // 获取证书按钮点击事件 (假设这是创建一个DID)
-    document.getElementById('getCertificateBtn').addEventListener('click', function () {
-        fetch(`${API_BASE_URL}/did/create`, {
-            method: 'POST',
-            credentials: 'include' // <--- 添加: 发送凭据 (cookies)
-        })
-            .then(response => {
-                if (!response.ok) {
-                    // 将 response 对象传递给错误处理函数，以便它可以尝试读取响应体
-                    const err = new Error(`HTTP error! status: ${response.status}`);
-                    err.response = response;
-                    throw err;
-                }
-                return response.json();
-            })
-            .then(data => {
-                displayJsonInBox('displayBox1', data, 'DID 创建成功: \n');
-            })
-            .catch(error => {
-                handleApiError('displayBox1', error, 'DID 创建失败: ');
+    document.getElementById('getCertificateBtn').addEventListener('click', async function () { // 改为 async 函数
+        const displayBox = document.getElementById('displayBox1'); // 假设结果显示在 displayBox1
+        displayBox.innerText = '正在创建新的DID和证书...';
+
+        try {
+            // 1. 客户端生成密钥对，获取公钥
+            const keyInfo = await generateClientKeyPairForDidCreation();
+            const clientPublicKeyBase64 = keyInfo.publicKeyBase64;
+
+            if (!clientPublicKeyBase64) {
+                displayJsonInBox('displayBox1', "客户端生成公钥失败。", 'DID 创建错误: ');
+                return;
+            }
+
+            // 2. 调用后端的 /api/did/create 接口，并发送公钥
+            const response = await fetch(`${API_BASE_URL}/did/create`, { // API_BASE_URL 应已定义
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 如果您的拦截器或Spring Security需要CSRF token等，也需要在这里添加
+                },
+                credentials: 'include', // 确保发送cookies（用于会话）
+                body: JSON.stringify({ publicKeyBase64: clientPublicKeyBase64 }) // **发送包含公钥的请求体**
             });
+
+            // 检查响应状态
+            if (!response.ok) {
+                // 尝试解析错误JSON体
+                let errorMessage = `HTTP 错误! 状态: ${response.status}`;
+                try {
+                    const errorResult = await response.json();
+                    errorMessage = errorResult.message || errorResult.error || JSON.stringify(errorResult);
+                } catch (e) {
+                    // 如果错误响应不是JSON，尝试读取文本
+                    const errorText = await response.text();
+                    errorMessage = errorText || errorMessage;
+                    if (errorText.toLowerCase().includes("<!doctype html")) {
+                        errorMessage = "创建DID请求失败：服务器返回了HTML页面，可能是API路径错误或认证问题。";
+                    }
+                }
+                // 将错误信息传递给 handleApiError 或直接显示
+                handleApiError('displayBox1', { message: errorMessage, response: response }, 'DID 创建失败: ');
+                return;
+            }
+
+            // 解析成功的JSON响应
+            const data = await response.json(); // 期望返回 { didDocument: { ... } }
+
+            // 显示结果 (假设您有一个 displayJsonInBox 函数)
+            // data.didDocument 中包含了新创建的DID信息
+            displayJsonInBox('displayBox1', data.didDocument, '新 DID 创建成功 (文档内容): \n');
+
+            // 您可以在这里提示用户新创建的DID的ID，例如:
+            // alert(`新DID已创建: ${data.didDocument.id}`);
+            // 并提醒用户他们需要使用对应的私钥进行后续操作。
+
+        } catch (error) { // 捕获 generateClientKeyPairForDidCreation 或 fetch 中的错误
+            console.error('获取证书 (创建DID) 过程中出错:', error);
+            // 将错误信息传递给 handleApiError 或直接显示
+            handleApiError('displayBox1', error, 'DID 创建时发生JavaScript错误: ');
+        }
     });
 
     // 列出所有DID按钮点击事件
