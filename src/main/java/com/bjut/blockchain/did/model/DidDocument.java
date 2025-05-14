@@ -19,15 +19,22 @@ public class DidDocument {
     @Getter
     @Setter
     private String id;
+
     // 验证方法列表（例如，公钥）
+    // 注意：为了方便修改，这里移除了final并添加了setter，或者确保在构造/使用时能正确填充
     @Getter
+    @Setter
     private List<VerificationMethod> verificationMethod = new ArrayList<>();
+
+    // 用于认证的验证方法ID列表
     @Getter
+    @Setter
     private List<String> authentication = new ArrayList<>();
+
     // (可选) 服务端点列表
     @Getter
     @Setter
-    private List<ServiceEndpoint> service;
+    private List<ServiceEndpoint> service; // 可能为 null，如果不需要
 
     /**
      * 计算此 DID 文档的 SHA-256 哈希值。
@@ -40,7 +47,7 @@ public class DidDocument {
             String jsonRepresentation = CommonUtil.getJson(this);
             return CommonUtil.calculateHash(jsonRepresentation);
         } catch (Exception e) {
-            System.err.println("计算 DID 文档 " + this.id + " 的哈希时出错: " + e.getMessage());
+            System.err.println("计算 DID 文档 " + (this.id != null ? this.id : "[ID未知]") + " 的哈希时出错: " + e.getMessage());
             e.printStackTrace();
             return null;
         }
@@ -63,10 +70,15 @@ public class DidDocument {
     @Override
     public String toString() {
         // 可以使用 CommonUtil.getJson(this) 来获取更详细的字符串表示
-        return "DidDocument{" +
-                "id='" + id + '\'' +
-                ", verificationMethodCount=" + (verificationMethod != null ? verificationMethod.size() : 0) +
-                '}';
+        try {
+            return CommonUtil.getJson(this);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return "DidDocument{" +
+                    "id='" + id + '\'' +
+                    ", verificationMethodCount=" + (verificationMethod != null ? verificationMethod.size() : 0) +
+                    ", authenticationCount=" + (authentication != null ? authentication.size() : 0) +
+                    '}';
+        }
     }
 
 
@@ -76,26 +88,15 @@ public class DidDocument {
      * 表示 DID 文档中的验证方法（例如公钥）。
      */
     public static class VerificationMethod {
-        // Getters 和 Setters...
-        @Setter
-        @Getter
-        private String id; // 验证方法 ID (例如 "did:example:123#keys-1")
-        @Setter
-        @Getter
-        private String type; // 验证方法类型 (例如 "RsaVerificationKey2018")
-        @Setter
-        private String controller; // 控制此方法的 DID
-        private String publicKeyJwk; // JWK 格式的公钥
-        private String publicKeyMultibase; // Multibase 格式的公钥
-        private String publicKeyBase58; // Base58 格式的公钥 (保留以备他用)
-        @Setter
-        @Getter
-        private String publicKeyBase64; // Base64 格式的公钥 (适用于 RSA/EC X.509)
-        // Setter for x509CertificateFingerprint
-        // Getter for x509CertificateFingerprint
-        @Setter
-        @Getter
-        private String x509CertificateFingerprint;
+        @Getter @Setter private String id; // 验证方法 ID (例如 "did:example:123#keys-1")
+        @Getter @Setter private String type; // 验证方法类型 (例如 "RsaVerificationKey2018")
+        @Getter @Setter private String controller; // 控制此方法的 DID
+        @Getter @Setter private String publicKeyJwk; // JWK 格式的公钥 (可选)
+        @Getter @Setter private String publicKeyMultibase; // Multibase 格式的公钥 (可选)
+        @Getter @Setter private String publicKeyBase58; // Base58 格式的公钥 (可选, 保留以备他用)
+        @Getter @Setter private String publicKeyBase64; // Base64 格式的公钥 (适用于 RSA/EC X.509)
+        @Getter @Setter private String x509CertificateFingerprint; // X.509证书指纹 (可选)
+
 
         @Override
         public boolean equals(Object o) {
@@ -123,9 +124,9 @@ public class DidDocument {
      * 表示 DID 文档中的服务端点。
      */
     public static class ServiceEndpoint {
-        private String id; // 服务端点 ID (例如 "did:example:123#service-1")
-        private String type; // 服务类型 (例如 "DIDCommMessaging")
-        private String serviceEndpoint; // 服务的 URL 或 URI
+        @Getter @Setter private String id; // 服务端点 ID (例如 "did:example:123#service-1")
+        @Getter @Setter private String type; // 服务类型 (例如 "DIDCommMessaging")
+        @Getter @Setter private String serviceEndpoint; // 服务的 URL 或 URI
 
 
         @Override
@@ -148,18 +149,6 @@ public class DidDocument {
                     ", type='" + type + '\'' +
                     ", serviceEndpoint='" + serviceEndpoint + '\'' +
                     '}';
-        }
-
-        public void setId(String id) {
-            this.id = id;
-        }
-
-        public void setType(String type) {
-            this.type = type;
-        }
-
-        public void setServiceEndpoint(String serviceEndpoint) {
-            this.serviceEndpoint = serviceEndpoint;
         }
     }
 }
