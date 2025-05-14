@@ -1,5 +1,5 @@
 server:
-  port: 8090
+  port: 8070
 
 spring:
   aop:
@@ -24,8 +24,8 @@ spring:
 
 block:
   difficulty: 4
-  p2pport: 7002
+  p2pport: 7001
   initialPeers:
     - ws://localhost:9065
+    - ws://localhost:7002
     - ws://localhost:7003
-    - ws://localhost:7001

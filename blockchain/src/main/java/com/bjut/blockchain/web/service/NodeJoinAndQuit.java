@@ -26,8 +26,8 @@ public class NodeJoinAndQuit {
         try {
             KeyAgreementUtil.keyAgreementValue=null;
             Thread.sleep(800);
-            CAImpl.createKeyPair();
-            PublicKey publicKey = CAImpl.getKeyPair().getPublic();
+            CAImpl.createNodeKeyPair();
+            PublicKey publicKey = CAImpl.getNodeKeyPair().getPublic();
             // 获取公钥的字节数组
             byte[] publicKeyBytes = publicKey.getEncoded();
             // 将字节数组转换为十六进制字符串

@@ -87,7 +87,7 @@ public class KeyAgreementUtil {
                         // 检查是否超时
                         if (System.currentTimeMillis() - startTime >= 7500) {
                             System.out.println("开始密钥协商");
-                            keyArray.add(CryptoUtil.byte2Hex(CAImpl.getKeyPair().getPublic().getEncoded()));
+                            keyArray.add(CryptoUtil.byte2Hex(CAImpl.getNodeKeyPair().getPublic().getEncoded()));
                             keyAgreement(keyArray.toArray(new String[0]));
                             // 清空keyArray
                             keyArray.clear();

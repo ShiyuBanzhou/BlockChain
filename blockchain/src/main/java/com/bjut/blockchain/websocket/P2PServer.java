@@ -103,7 +103,7 @@ public class P2PServer {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        String publicKeyHex = CryptoUtil.byte2Hex(CAImpl.getKeyPair().getPublic().getEncoded());
+        String publicKeyHex = CryptoUtil.byte2Hex(CAImpl.getNodeKeyPair().getPublic().getEncoded());
 		Message message=new Message(BlockConstant.KEY_AGREEMENT,publicKeyHex);
 		p2pService.broatcast(JSON.toJSONString(message));
 	}
