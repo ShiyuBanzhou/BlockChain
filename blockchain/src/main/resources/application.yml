@@ -1,0 +1,31 @@
+server:
+  port: 8090
+
+spring:
+  aop:
+    proxy-target-class: true
+
+  # --- MySQL数据库配置 ---
+  datasource:
+    url: jdbc:mysql://localhost:3306/diddb_mysql?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driverClassName: com.mysql.cj.jdbc.Driver # MySQL Connector/J 8.x+ 的驱动类名
+
+  # --- JPA (Hibernate) 配置 ---
+  jpa:
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+block:
+  difficulty: 4
+  p2pport: 7002
+  initialPeers:
+    - ws://localhost:9065
+    - ws://localhost:7003
+    - ws://localhost:7001
