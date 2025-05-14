@@ -3,38 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DID 登录 - 区块链应用</title>
-    <script src="https://cdn.tailwindcss.com"></script> <style>
-    body { font-family: 'Inter', sans-serif; }
-    .login-container { min-width: 320px; }
-    .hidden { display: none; }
-    textarea { white-space: pre; overflow-wrap: normal; overflow-x: scroll; }
-    .code-block {
-        background-color: #f0f0f0;
-        padding: 8px;
-        border-radius: 4px;
-        font-family: monospace;
-        font-size: 0.85em;
-        word-break: break-all;
-    }
-</style>
+    <title>DID 登录 - 区块链应用 (Web Crypto API)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .login-container { min-width: 380px; /* 稍微加宽以便显示更多信息 */ }
+        .hidden { display: none; }
+        textarea { white-space: pre; overflow-wrap: normal; overflow-x: scroll; font-size: 0.8em; }
+        .code-block {
+            background-color: #f0f0f0;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85em;
+            word-break: break-all;
+            margin-top: 4px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .button-action {
+            background-color: #4F46E5; /* Indigo */
+            color: white;
+        }
+        .button-action:hover {
+            background-color: #4338CA;
+        }
+        #keyManagementArea button { margin-top: 5px; }
+    </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen">
-<div class="login-container bg-white p-8 md:p-12 rounded-lg shadow-xl w-full max-w-md">
-    <h2 class="text-3xl font-bold text-center text-gray-800 mb-8">DID 身份认证</h2>
+<div class="login-container bg-white p-8 md:p-12 rounded-lg shadow-xl w-full max-w-lg"> <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">DID 身份认证 (浏览器密钥)</h2>
+
+    <div id="keyManagementArea" class="mb-6 p-4 border rounded-md bg-slate-50">
+        <h3 class="text-lg font-semibold text-gray-700 mb-2">演示密钥与DID管理</h3>
+        <button id="generateAndRegisterDidButton" class="w-full py-2 px-4 text-sm button-action rounded-md">1. 生成新密钥对并注册DID</button>
+        <div id="currentDidInfo" class="mt-2 text-xs text-gray-600 space-y-1">
+            <p>当前选中DID: <span id="selectedDidDisplay" class="font-semibold text-gray-800">无</span></p>
+            <p>对应KeyID: <span id="selectedKeyIdDisplay" class="font-semibold text-gray-800">无</span></p>
+            <div id="storedKeysDisplay" class="mt-1">已存储的演示密钥 (仅供本次会话，刷新后丢失): 无</div>
+        </div>
+        <button id="listKeysButton" class="w-full py-2 px-4 text-sm bg-gray-200 hover:bg-gray-300 rounded-md text-gray-700">查看/选择已生成密钥</button>
+    </div>
+
 
     <div id="step1DidInput">
         <form id="didForm" class="space-y-6">
             <div>
-                <label for="did" class="block text-sm font-medium text-gray-700 mb-1">您的 DID</label>
+                <label for="did" class="block text-sm font-medium text-gray-700 mb-1">要登录的 DID</label>
                 <input type="text" id="did" name="did" required
                        class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                       placeholder="例如: did:example:123...">
+                       placeholder="选择或输入DID">
             </div>
             <div>
-                <button type="submit"
+                <button id="getChallengeButton" type="submit"
                         class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
-                    获取挑战
+                    2. 获取挑战
                 </button>
             </div>
         </form>
@@ -43,32 +66,33 @@
     <div id="step2SignChallenge" class="hidden space-y-6">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">DID:</label>
-            <p id="displayDid" class="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-md"></p>
+            <p id="displayDid" class_code-block"></p>
         </div>
         <div>
             <label for="challenge" class="block text-sm font-medium text-gray-700 mb-1">待签名挑战:</label>
             <textarea id="challenge" name="challenge" readonly
-                      class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-24"></textarea>
+                      class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-20"></textarea>
         </div>
         <div>
-            <label for="keyId" class="block text-sm font-medium text-gray-700 mb-1">密钥 ID (来自DID文档):</label>
-            <input type="text" id="keyId" name="keyId"
-                   class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                   placeholder="例如: did:example:123...#keys-1">
+            <label for="keyId" class="block text-sm font-medium text-gray-700 mb-1">用于签名的密钥 ID:</label>
+            <input type="text" id="keyId" name="keyId" readonly
+                   class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-100 focus:outline-none sm:text-sm">
+        </div>
+        <div>
+            <button id="signChallengeClientSideButton" type="button"
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium button-action focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                3. 使用浏览器密钥签名挑战
+            </button>
         </div>
         <div>
             <label for="signature" class="block text-sm font-medium text-gray-700 mb-1">签名 (Base64):</label>
-            <textarea id="signature" name="signature" required
-                      class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm h-24"
-                      placeholder="请在此处粘贴挑战的签名 (Base64编码)"></textarea>
-            <p class="mt-2 text-xs text-gray-500">
-                您需要使用与您的DID和密钥ID关联的私钥，在客户端对上面的“待签名挑战”进行签名。
-            </p>
+            <textarea id="signature" name="signature" readonly
+                      class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-20"></textarea>
         </div>
         <div>
             <button id="verifyButton" type="button"
                     class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out">
-                验证登录
+                4. 验证登录
             </button>
             <button id="backToDidInputButton" type="button"
                     class="mt-2 w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
@@ -78,46 +102,202 @@
     </div>
 
     <div id="messageArea" class="mt-6 text-center text-sm"></div>
+    <div id="createdDidInfo" class="hidden mt-2 p-3 bg-gray-100 rounded text-xs space-y-1"></div>
 
-    <div class="mt-6 text-center">
-        <p class="text-xs text-gray-500">
-            需要先 <a href="javascript:void(0)" id="createDidLink" class="text-indigo-600 hover:text-indigo-500">创建一个演示 DID</a> 吗? (客户端将模拟生成密钥)
-        </p>
-        <div id="createdDidInfo" class="hidden mt-2 p-3 bg-gray-100 rounded text-xs space-y-1"></div>
-    </div>
 </div>
 
 <script>
-    // 获取页面元素
+    // --- DOM 元素获取 ---
+    const generateAndRegisterDidButton = document.getElementById('generateAndRegisterDidButton');
+    const listKeysButton = document.getElementById('listKeysButton');
+    const selectedDidDisplay = document.getElementById('selectedDidDisplay');
+    const selectedKeyIdDisplay = document.getElementById('selectedKeyIdDisplay');
+    const storedKeysDisplay = document.getElementById('storedKeysDisplay');
+
+    const didInput = document.getElementById('did'); // Renamed from did to didInput for clarity
     const didForm = document.getElementById('didForm');
+    const getChallengeButton = document.getElementById('getChallengeButton'); // Still useful as submit trigger
+
     const step1DidInput = document.getElementById('step1DidInput');
     const step2SignChallenge = document.getElementById('step2SignChallenge');
     const displayDidElem = document.getElementById('displayDid');
     const challengeElem = document.getElementById('challenge');
-    const keyIdElem = document.getElementById('keyId');
+    const keyIdElem = document.getElementById('keyId'); // Input field for keyId used in signing
+    const signChallengeClientSideButton = document.getElementById('signChallengeClientSideButton');
     const signatureElem = document.getElementById('signature');
     const verifyButton = document.getElementById('verifyButton');
-    // const demoSignButton = document.getElementById('demoSignButton'); // 已移除
     const backToDidInputButton = document.getElementById('backToDidInputButton');
+
     const messageArea = document.getElementById('messageArea');
-    const createDidLink = document.getElementById('createDidLink');
     const createdDidInfo = document.getElementById('createdDidInfo');
 
     const SPRING_BOOT_API_BASE_URL = 'http://localhost:8080/api/did';
 
-    let currentDid = '';
-    let currentChallenge = '';
-    let currentKeyIdHint = '';
+    // --- 演示用：内存存储生成的密钥和DID信息 ---
+    // 警告: 这是一个非常不安全的做法，仅用于演示目的。刷新页面数据会丢失。
+    // 真实应用需要使用 IndexedDB 等浏览器安全存储。
+    const DEMO_KEY_STORAGE = {
+        keys: {}, // didString -> { privateKey: CryptoKey, publicKeyBase64: string, keyId: string }
+        currentSelectedDid: null
+    };
+    // --- 结束演示存储 ---
 
-    // 处理DID表单提交（请求挑战）
+    // --- Web Crypto API 辅助函数 ---
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    async function generateRsaKeyPair() { // 生成RSA密钥对
+        return await window.crypto.subtle.generateKey(
+            {
+                name: "RSASSA-PKCS1-v1_5",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // 65537
+                hash: "SHA-256",
+            },
+            true, // extractable - 设为true以便演示中导出公钥，私钥不应轻易导出
+            ["sign", "verify"]
+        );
+    }
+
+    async function exportPublicKeyAsBase64Spki(publicKey) { // 导出公钥
+        const exportedSpki = await window.crypto.subtle.exportKey("spki", publicKey);
+        return arrayBufferToBase64(exportedSpki);
+    }
+
+    // --- 应用程序状态 ---
+    let currentChallengeText = ''; // 当前从服务器获取的挑战
+
+    // --- UI 更新函数 ---
+    function updateKeyManagementDisplay() {
+        const dids = Object.keys(DEMO_KEY_STORAGE.keys);
+        if (dids.length > 0) {
+            let html = '<ul>';
+            dids.forEach(did => {
+                const keyId = DEMO_KEY_STORAGE.keys[did].keyId;
+                html += `<li class="text-xs cursor-pointer hover:bg-slate-200 p-1 rounded" data-did="${did}" data-keyid="${keyId}">
+                            DID: ${did.substring(0,20)}... KeyID: ${keyId}
+                            ${DEMO_KEY_STORAGE.currentSelectedDid === did ? '<span class="text-green-600 font-semibold">(选中)</span>' : ''}
+                         </li>`;
+            });
+            html += '</ul>';
+            storedKeysDisplay.innerHTML = html;
+
+            // 给列表项添加点击事件以选择DID
+            storedKeysDisplay.querySelectorAll('li').forEach(item => {
+                item.addEventListener('click', () => {
+                    DEMO_KEY_STORAGE.currentSelectedDid = item.dataset.did;
+                    selectedDidDisplay.textContent = item.dataset.did;
+                    selectedKeyIdDisplay.textContent = item.dataset.keyid;
+                    didInput.value = item.dataset.did; // 预填充登录表单的DID输入框
+                    keyIdElem.value = item.dataset.keyid; // 预填充签名步骤的KeyID输入框
+                    updateKeyManagementDisplay(); // 重新渲染以显示选中状态
+                    messageArea.textContent = `已选择 DID: ${item.dataset.did}`;
+                    messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+                });
+            });
+
+        } else {
+            storedKeysDisplay.textContent = "尚未生成演示密钥。";
+        }
+        if (DEMO_KEY_STORAGE.currentSelectedDid) {
+            selectedDidDisplay.textContent = DEMO_KEY_STORAGE.currentSelectedDid;
+            selectedKeyIdDisplay.textContent = DEMO_KEY_STORAGE.keys[DEMO_KEY_STORAGE.currentSelectedDid]?.keyId || '无';
+            didInput.value = DEMO_KEY_STORAGE.currentSelectedDid;
+            keyIdElem.value = DEMO_KEY_STORAGE.keys[DEMO_KEY_STORAGE.currentSelectedDid]?.keyId || '';
+        } else {
+            selectedDidDisplay.textContent = "无";
+            selectedKeyIdDisplay.textContent = "无";
+        }
+    }
+
+    // --- 事件监听器 ---
+
+    // 1. 生成新密钥对并注册DID
+    generateAndRegisterDidButton.addEventListener('click', async () => {
+        messageArea.textContent = '正在生成密钥对并注册新DID...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        createdDidInfo.classList.add('hidden');
+        createdDidInfo.innerHTML = '';
+
+        try {
+            const keyPair = await generateRsaKeyPair(); // 客户端生成密钥对
+            const publicKeyBase64 = await exportPublicKeyAsBase64Spki(keyPair.publicKey);
+
+            // 调用后端 /api/did/create 发送公钥
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ publicKeyBase64: publicKeyBase64 })
+            });
+            const result = await response.json(); // 期望: { didDocument: { id: "...", authentication: ["...#keyId"], ... } }
+
+            if (!response.ok) {
+                throw new Error(result.message || result.error || `创建DID失败 (状态: ${response.status})`);
+            }
+
+            const newDidString = result.didDocument.id;
+            // 从返回的DID文档的authentication数组中获取keyId
+            const newKeyId = result.didDocument.authentication && result.didDocument.authentication.length > 0
+                ? result.didDocument.authentication[0]
+                : `${newDidString}#keys-1`; // 备用keyId
+
+            // (演示用) 将私钥和相关信息存储在内存中
+            DEMO_KEY_STORAGE.keys[newDidString] = {
+                privateKey: keyPair.privateKey, // CryptoKey 对象
+                publicKeyBase64: publicKeyBase64,
+                keyId: newKeyId
+            };
+            DEMO_KEY_STORAGE.currentSelectedDid = newDidString; // 自动选中新创建的DID
+
+            messageArea.textContent = '新DID已生成并注册成功!';
+            messageArea.classList.add('text-green-600');
+
+            createdDidInfo.innerHTML = `
+                <p><strong>新DID:</strong> <span class="code-block">${newDidString}</span></p>
+                <p><strong>对应KeyID:</strong> <span class="code-block">${newKeyId}</span></p>
+                <p><strong>公钥 (Base64 SPKI):</strong></p>
+                <textarea class="code-block w-full h-20 text-xs" readonly>${publicKeyBase64}</textarea>
+                <p class="mt-2 text-red-500 font-semibold">演示私钥 (CryptoKey对象) 已临时保存在浏览器内存中，用于本次会话的签名。刷新页面将丢失。</p>`;
+            createdDidInfo.classList.remove('hidden');
+
+            updateKeyManagementDisplay(); // 更新密钥管理区域的显示
+
+        } catch (error) {
+            console.error('生成和注册DID时出错:', error);
+            messageArea.textContent = `错误: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    // 查看/选择已生成密钥按钮
+    listKeysButton.addEventListener('click', () => {
+        updateKeyManagementDisplay(); // 简单地重新渲染列表区域
+        if (Object.keys(DEMO_KEY_STORAGE.keys).length === 0) {
+            messageArea.textContent = "提示：尚未生成任何演示密钥。请先点击“生成新密钥对并注册DID”。";
+            messageArea.className = 'mt-6 text-center text-sm text-yellow-600';
+        }
+    });
+
+    // 2. 获取挑战 (didForm 提交事件)
     didForm.addEventListener('submit', async function(event) {
         event.preventDefault();
-        currentDid = document.getElementById('did').value;
+        const didToAuth = didInput.value; // 从输入框获取要认证的DID
         messageArea.textContent = '';
         messageArea.className = 'mt-6 text-center text-sm';
 
-        if (!currentDid) {
-            messageArea.textContent = '请输入您的DID。';
+        if (!didToAuth) {
+            messageArea.textContent = '请输入或选择一个DID进行登录。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        if (!DEMO_KEY_STORAGE.keys[didToAuth]) {
+            messageArea.textContent = `错误：未找到与DID '${didToAuth}' 关联的本地演示私钥。请确保您已为此DID生成密钥或选择了正确的DID。`;
             messageArea.classList.add('text-red-600');
             return;
         }
@@ -126,56 +306,101 @@
             const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/auth/challenge`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ did: currentDid }),
+                body: JSON.stringify({ did: didToAuth }),
             });
             const result = await response.json();
 
             if (!response.ok) {
-                messageArea.textContent = result.message || result.error || `获取挑战失败 (状态: ${response.status})`;
-                messageArea.classList.add('text-red-600');
-            } else {
-                currentChallenge = result.challenge;
-                currentKeyIdHint = result.keyIdHint || (currentDid + '#keys-1');
-
-                displayDidElem.textContent = currentDid;
-                challengeElem.value = currentChallenge;
-                keyIdElem.value = currentKeyIdHint;
-                signatureElem.value = '';
-
-                step1DidInput.classList.add('hidden');
-                step2SignChallenge.classList.remove('hidden');
-                messageArea.textContent = '已获取挑战，请在客户端对挑战内容进行签名。';
-                messageArea.classList.add('text-blue-600');
+                throw new Error(result.message || result.error || `获取挑战失败 (状态: ${response.status})`);
             }
+
+            currentChallengeText = result.challenge;
+            const serverSuggestedKeyId = result.keyIdHint || DEMO_KEY_STORAGE.keys[didToAuth].keyId;
+
+            displayDidElem.textContent = didToAuth; // 显示当前操作的DID
+            challengeElem.value = currentChallengeText;
+            keyIdElem.value = serverSuggestedKeyId; // 使用服务器建议的或本地存储的KeyID
+            signatureElem.value = '';
+
+            step1DidInput.classList.add('hidden');
+            step2SignChallenge.classList.remove('hidden');
+            messageArea.textContent = '已获取挑战，请使用浏览器密钥签名。';
+            messageArea.classList.add('text-blue-600');
+
         } catch (error) {
             console.error('获取挑战失败:', error);
-            messageArea.textContent = '获取挑战的请求失败，请检查网络或稍后再试。';
+            messageArea.textContent = `获取挑战请求失败: ${error.message}`;
             messageArea.classList.add('text-red-600');
         }
     });
 
-    // "返回"按钮
+    // 3. 使用浏览器密钥签名挑战
+    signChallengeClientSideButton.addEventListener('click', async () => {
+        const didToSignWith = displayDidElem.textContent; // 从显示区域获取当前DID
+        const keyIdForSigning = keyIdElem.value; // 从输入框获取KeyID
+
+        if (!didToSignWith || !currentChallengeText) {
+            messageArea.textContent = '错误：没有有效的DID或挑战来进行签名。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        if (!keyIdForSigning) {
+            messageArea.textContent = '错误：请输入或确认用于签名的密钥ID。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+
+        const keyInfo = DEMO_KEY_STORAGE.keys[didToSignWith];
+        if (!keyInfo || !keyInfo.privateKey) {
+            messageArea.textContent = `错误：未找到与DID '${didToSignWith}' 关联的本地演示私钥。可能需要重新生成。`;
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        // 确保使用的keyId与存储的keyId匹配（或由用户确认）
+        if (keyInfo.keyId !== keyIdForSigning) {
+            if (!confirm(`警告：输入框中的KeyID '${keyIdForSigning}' 与为此DID '${didToSignWith}' 存储的KeyID '${keyInfo.keyId}' 不符。是否仍要使用 '${keyIdForSigning}' 进行签名和验证？`)) {
+                keyIdElem.value = keyInfo.keyId; // 恢复为存储的keyId
+                messageArea.textContent = "操作已取消或KeyID已更正。";
+                return;
+            }
+        }
+
+
+        messageArea.textContent = '正在使用浏览器密钥签名...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        try {
+            const signatureArrayBuffer = await window.crypto.subtle.sign(
+                { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, // 确保与密钥生成时一致
+                keyInfo.privateKey, // 使用存储的 CryptoKey 私钥对象
+                new TextEncoder().encode(currentChallengeText)
+            );
+            signatureElem.value = arrayBufferToBase64(signatureArrayBuffer);
+            messageArea.textContent = '挑战已签名！请点击“验证登录”。';
+            messageArea.classList.add('text-green-600');
+        } catch (error) {
+            console.error("客户端签名时出错:", error);
+            messageArea.textContent = `客户端签名失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    // “返回”按钮
     backToDidInputButton.addEventListener('click', () => {
         step2SignChallenge.classList.add('hidden');
         step1DidInput.classList.remove('hidden');
         messageArea.textContent = '';
     });
 
-    // 处理"验证登录"按钮点击
+    // 4. 验证登录 (与之前基本相同)
     verifyButton.addEventListener('click', async function() {
         const signatureBase64 = signatureElem.value;
-        const keyIdToUse = keyIdElem.value;
+        const didToVerify = displayDidElem.textContent; // 从显示区域获取
+        const keyIdToVerify = keyIdElem.value; // 从输入框获取
 
-        if (!signatureBase64) {
-            messageArea.textContent = '请输入签名 (Base64编码)。';
-            messageArea.classList.add('text-red-600');
-            return;
-        }
-        if (!keyIdToUse) {
-            messageArea.textContent = '请输入用于签名的密钥 ID。';
-            messageArea.classList.add('text-red-600');
-            return;
-        }
+        if (!signatureBase64) { /* ... */ return; }
+        if (!didToVerify) { /* ... */ return; }
+        if (!keyIdToVerify) { /* ... */ return; }
+
 
         messageArea.textContent = '正在验证签名...';
         messageArea.className = 'mt-6 text-center text-sm text-blue-600';
@@ -185,208 +410,33 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    did: currentDid,
-                    challenge: currentChallenge,
+                    did: didToVerify,
+                    challenge: currentChallengeText,
                     signatureBase64: signatureBase64,
-                    keyId: keyIdToUse
+                    keyId: keyIdToVerify
                 }),
             });
             const result = await response.json();
 
             if (!response.ok) {
-                messageArea.textContent = result.message || `验证失败 (状态: ${response.status})`;
-                messageArea.classList.add('text-red-600');
+                throw new Error(result.message || `验证失败 (状态: ${response.status})`);
+            }
+            if (result.success) {
+                messageArea.textContent = result.message || '登录成功！正在跳转...';
+                messageArea.classList.add('text-green-600');
+                setTimeout(() => { window.location.href = 'BlockChain.html'; }, 1500);
             } else {
-                if (result.success) {
-                    messageArea.textContent = result.message || '登录成功！正在跳转...';
-                    messageArea.classList.remove('text-red-600');
-                    messageArea.classList.add('text-green-600');
-                    setTimeout(() => {
-                        window.location.href = 'BlockChain.html';
-                    }, 1500);
-                } else {
-                    messageArea.textContent = result.message || '登录验证失败，请检查您的签名或密钥ID。';
-                    messageArea.classList.add('text-red-600');
-                }
+                throw new Error(result.message || '登录验证失败，请检查您的签名或密钥ID。');
             }
         } catch (error) {
             console.error('验证请求失败:', error);
-            messageArea.textContent = '验证请求失败，请检查网络或稍后再试。';
+            messageArea.textContent = `验证请求失败: ${error.message}`;
             messageArea.classList.add('text-red-600');
         }
     });
 
-    // --- 客户端密钥生成与签名逻辑 (占位符/简化模拟) ---
-
-    /**
-     * 辅助函数：将 ArrayBuffer 转换为 Base64 字符串
-     */
-    function arrayBufferToBase64(buffer) {
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return window.btoa(binary);
-    }
-
-    /**
-     * 模拟客户端生成 RSA 密钥对 (仅用于演示目的)
-     * 真实应用中，密钥应安全生成和存储，或通过钱包管理。
-     * 返回: Promise<{publicKeyBase64: string, privateKeyForSigning: CryptoKey, privateKeyJwkForViewing: object}>
-     */
-    async function generateClientKeyPairDemo() {
-        try {
-            const keyPair = await window.crypto.subtle.generateKey(
-                {
-                    name: "RSASSA-PKCS1-v1_5",
-                    modulusLength: 2048,
-                    publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
-                    hash: {name: "SHA-256"},
-                },
-                true, // **重要：extractable 必须为 true 才能导出私钥**
-                ["sign", "verify"]
-            );
-
-            const publicKeySpki = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
-            const publicKeyBase64 = arrayBufferToBase64(publicKeySpki);
-
-            console.log("客户端演示：生成的公钥 (Base64 SPKI):", publicKeyBase64);
-
-            // --- 新增：导出私钥为 JWK 格式以便查看 ---
-            let privateKeyJwkForViewing = null;
-            try {
-                privateKeyJwkForViewing = await window.crypto.subtle.exportKey("jwk", keyPair.privateKey);
-                console.log("客户端演示：导出的私钥 (JWK格式，仅供查看，不要在生产中暴露！):", JSON.stringify(privateKeyJwkForViewing, null, 2));
-            } catch (exportError) {
-                console.error("导出私钥为JWK时出错:", exportError);
-                // 如果导出为JWK失败，尝试导出为 PKCS#8 (如果需要，但这更原始)
-                // const privateKeyPkcs8 = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-                // console.log("客户端演示：导出的私钥 (PKCS#8 Base64，仅供查看！):", arrayBufferToBase64(privateKeyPkcs8));
-            }
-            // -----------------------------------------
-
-            // 将私钥对象存储到临时变量中，以便在控制台手动签名时使用（如果需要）
-            window.tempPrivateKeyForDemoSigning = keyPair.privateKey;
-            console.log("客户端演示：私钥 (CryptoKey 对象) 已存储到 window.tempPrivateKeyForDemoSigning 变量中。");
-
-            return {
-                publicKeyBase64: publicKeyBase64,
-                privateKeyForSigning: keyPair.privateKey, // 这是 CryptoKey 对象
-                privateKeyJwkForViewing: privateKeyJwkForViewing // 这是 JWK 对象
-            };
-        } catch (error) {
-            console.error("客户端模拟生成密钥对失败:", error);
-            throw error;
-        }
-    }
-
-    /**
-     * 客户端签名挑战的占位符函数。
-     * 您需要用实际的客户端签名逻辑替换这里。
-     * @param {string} challenge - 要签名的挑战字符串。
-     * @param {CryptoKey} privateKey - 用于签名的 CryptoKey 类型的私钥对象。
-     * @returns {Promise<string>} - Base64编码的签名字符串。
-     */
-    async function signChallengeOnClient(challenge, privateKey) {
-        if (!privateKey) {
-            messageArea.textContent = '错误：客户端签名需要私钥，但未提供。请先创建或加载密钥。';
-            messageArea.classList.add('text-red-600');
-            throw new Error("客户端签名需要私钥。");
-        }
-        try {
-            const signatureBuffer = await window.crypto.subtle.sign(
-                { name: "RSASSA-PKCS1-v1_5", hash: {name: "SHA-256"} },
-                privateKey,
-                new TextEncoder().encode(challenge)
-            );
-            return arrayBufferToBase64(signatureBuffer);
-        } catch (e) {
-            console.error("客户端使用Web Crypto API签名时出错:", e);
-            messageArea.textContent = '客户端签名时出错: ' + e.message;
-            messageArea.classList.add('text-red-600');
-            throw e;
-        }
-    }
-
-    // DEMO 辅助签名按钮已被移除，因为服务器不再提供此功能。
-    // demoSignButton 事件监听器也应移除。
-
-    // "创建一个演示 DID" 链接的事件监听器
-    createDidLink.addEventListener('click', async () => {
-        messageArea.textContent = '正在创建新的演示DID (客户端模拟生成密钥)...';
-        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
-        createdDidInfo.classList.add('hidden');
-        createdDidInfo.innerHTML = '';
-
-        try {
-            // 1. 客户端（模拟）生成密钥对
-            const keyInfo = await generateClientKeyPairDemo(); // 此函数返回 { publicKeyBase64, privateKeyForSigning }
-
-            // (重要提示) 在真实应用中，您需要安全地存储或管理这里的 keyInfo.privateKeyForSigning
-            // 以便后续在 signChallengeOnClient 中使用。
-            // 为简化此演示，我们暂不处理其持久化存储，仅用于一次性创建和提示。
-            // 用户需要手动记录或理解，登录时需要用此（或对应的）私钥签名。
-            window.alert( // 更新弹窗信息
-                "客户端已模拟生成密钥对。\n" +
-                "公钥 (Base64 SPKI) 将发送给服务器创建DID。\n" +
-                "私钥 (JWK格式，仅用于本次演示查看) 已打印到浏览器控制台。\n\n" +
-                "公钥:\n" + keyInfo.publicKeyBase64.substring(0, 60) + "..." +
-                "\n\n请查看浏览器控制台获取私钥的JWK表示（仅用于调试）。"
-            );
-
-
-            // 2. 将公钥发送到服务器创建DID
-            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/create`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ publicKeyBase64: keyInfo.publicKeyBase64 }) // 发送公钥
-            });
-            const result = await response.json();
-
-            if (!response.ok) {
-                messageArea.textContent = result.message || result.error || `创建DID失败 (状态: ${response.status})`;
-                messageArea.classList.add('text-red-600');
-            } else {
-                const didString = result.didDocument.id;
-                const keyId = result.didDocument.authentication && result.didDocument.authentication.length > 0
-                    ? result.didDocument.authentication[0]
-                    : (didString + '#keys-1');
-
-                messageArea.textContent = '演示DID创建成功! 公钥已提交给服务器。';
-                messageArea.classList.remove('text-red-600');
-                messageArea.classList.add('text-green-600');
-
-                let createdInfoHtml = `
-                <p><strong>新创建的 DID:</strong> <span class="code-block">${didString}</span></p>
-                <p><strong>关联的 Key ID (用于登录):</strong> <span class="code-block">${keyId}</span></p>
-                <p><strong>您的公钥 (Base64 SPKI):</strong></p>
-                <textarea class="code-block w-full h-20 text-xs" readonly>${keyInfo.publicKeyBase64}</textarea>
-            `;
-
-                if (keyInfo.privateKeyJwkForViewing) {
-                    createdInfoHtml += `
-                    <p class_mt-2><strong>您的演示私钥 (JWK 格式 - 仅供查看和调试，切勿在生产中暴露!):</strong></p>
-                    <textarea class="code-block w-full h-40 text-xs" readonly>${JSON.stringify(keyInfo.privateKeyJwkForViewing, null, 2)}</textarea>
-                `;
-                } else {
-                    createdInfoHtml += `<p class_mt-2 text-red-500">未能成功导出私钥为JWK进行查看。</p>`;
-                }
-
-                createdInfoHtml += `
-                <p class="mt-2 font-bold text-red-500">请注意：您需要在客户端使用与此公钥对应的【私钥】对挑战进行签名来完成登录。</p>
-                <p class="text-xs text-gray-600">（在此演示中，私钥（CryptoKey对象）临时存在于浏览器内存中。JWK仅用于查看，刷新页面后CryptoKey对象会丢失。）</p>
-            `;
-                createdDidInfo.innerHTML = createdInfoHtml;
-                document.getElementById('did').value = didString;
-            }
-        } catch (error) {
-            console.error('创建演示DID或客户端生成密钥时出错:', error);
-            messageArea.textContent = '创建演示DID过程中出错: ' + error.message;
-            messageArea.classList.add('text-red-600');
-        }
-    });
+    // 初始化UI
+    updateKeyManagementDisplay();
 
 </script>
 </body>
