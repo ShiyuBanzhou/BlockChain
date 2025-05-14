@@ -1,4 +1,19 @@
 {
+  "did:example:e835eef8-6b33-43f0-a576-5dd94476c806" : {
+    "id" : "did:example:e835eef8-6b33-43f0-a576-5dd94476c806",
+    "verificationMethod" : [ {
+      "id" : "did:example:e835eef8-6b33-43f0-a576-5dd94476c806#keys-1",
+      "type" : "RsaVerificationKey2018",
+      "controller" : "did:example:e835eef8-6b33-43f0-a576-5dd94476c806",
+      "publicKeyJwk" : null,
+      "publicKeyMultibase" : null,
+      "publicKeyBase58" : null,
+      "publicKeyBase64" : "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAucmUtT81sHlpQsk699qtcV8ju0V28MfJCsMSo+4rJksNFTcqADSJFDwl6YpaBZ/bfuCoJCwkhcfT8a1rQ5IIEVlHzG8cMbIWnrfsM2b+PEICylPshMMf5LQYtfz2VrJLe5KwC/bcX06rHcYJS+VrtHszsamPl7kkCgU/H91wLFGFNlnPAGyhiohf6bny6QhxY34Ur+3KdpwpW9XfDA8NnijgncjBWKlme6Xnrp2VG0qHB/1GefUuAyPxRY/6JCNuSlnqEt8o+nQzCvtalQ0zWQxYcprIR1+KKjr5cDbU1XMkDK+a0m0Bq5fMlgkhyoBBjlHxyNKkJEcZOk1CW/55UQIDAQAB",
+      "x509CertificateFingerprint" : null
+    } ],
+    "authentication" : [ "did:example:e835eef8-6b33-43f0-a576-5dd94476c806#keys-1" ],
+    "service" : null
+  },
   "did:example:bcb09905-b3e2-4189-b563-12e7aef36b46" : {
     "id" : "did:example:bcb09905-b3e2-4189-b563-12e7aef36b46",
     "verificationMethod" : [ {

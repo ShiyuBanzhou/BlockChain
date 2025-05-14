@@ -1,15 +1,30 @@
 server:
-  port: 8080 # 节点自身的HTTP服务端口
-
+  port: 8080
 
 spring:
   aop:
     proxy-target-class: true
 
+  # --- MySQL数据库配置 ---
+  datasource:
+    url: jdbc:mysql://localhost:3306/diddb_mysql?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driverClassName: com.mysql.cj.jdbc.Driver # MySQL Connector/J 8.x+ 的驱动类名
+
+  # --- JPA (Hibernate) 配置 ---
+  jpa:
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
 block:
   difficulty: 4
-  p2pport: 7001 # 节点自身的P2P服务端口
-  ## 要连接的初始节点地址列表
+  p2pport: 7001
   initialPeers:
     - ws://localhost:9065
     - ws://localhost:7003

@@ -1,241 +1,402 @@
 package com.bjut.blockchain.web.service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import com.alibaba.fastjson.JSON;
+import com.bjut.blockchain.web.entity.PendingTransactionEntity; // 引入待处理交易实体
 import com.bjut.blockchain.web.model.Block;
-import com.bjut.blockchain.web.model.Transaction;
+import com.bjut.blockchain.web.model.Transaction; // 业务模型
+import com.bjut.blockchain.web.repository.PendingTransactionRepository; // 引入待处理交易仓库
 import com.bjut.blockchain.web.util.BlockCache;
 import com.bjut.blockchain.web.util.CryptoUtil;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper; // 用于 findDidAnchorHash
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 区块链核心服务
- * 
- * @author Jared Jia
- *
+ * - 创建和添加区块
+ * - 验证区块和链的有效性
+ * - 计算哈希
+ * - 管理待处理交易池（通过数据库持久化）
+ * - 查找DID锚定哈希
  */
 @Service
 public class BlockService {
-	// 使用线程安全的列表作为交易池
-	private List<Transaction> transactionPool = new CopyOnWriteArrayList<>();
-	private final ObjectMapper objectMapper = new ObjectMapper();
+	private static final Logger logger = LoggerFactory.getLogger(BlockService.class);
+
+	private final PendingTransactionRepository pendingTransactionRepository; // 注入仓库
+	private final BlockCache blockCache; // BlockCache 依赖
+	private final ObjectMapper objectMapper; // 用于 findDidAnchorHash 中的JSON解析
 
 	@Autowired
-	BlockCache blockCache;
+	public BlockService(PendingTransactionRepository pendingTransactionRepository,
+						BlockCache blockCache,
+						ObjectMapper objectMapper) {
+		this.pendingTransactionRepository = pendingTransactionRepository;
+		this.blockCache = blockCache;
+		this.objectMapper = objectMapper;
+	}
+
 	/**
-	 * 创建创世区块
-	 * @return
+	 * 创建创世区块。
+	 * @return JSON字符串表示的创世区块。
 	 */
+	@Transactional // 创世区块的创建也可能涉及持久化操作（如果初始交易也入库的话）
 	public String createGenesisBlock() {
+		// 检查是否已存在创世区块（通过查询区块链缓存）
+		if (blockCache.getBlockChain() != null && !blockCache.getBlockChain().isEmpty()) {
+			logger.info("创世区块已存在，不再重复创建。");
+			// 可以选择返回已存在的创世区块或提示信息
+			return JSON.toJSONString(blockCache.getLatestBlock());
+		}
+
+		logger.info("正在创建创世区块...");
 		Block genesisBlock = new Block();
-		//设置创世区块高度为1
 		genesisBlock.setIndex(1);
 		genesisBlock.setTimestamp(System.currentTimeMillis());
-		genesisBlock.setNonce(1);
-		//封装业务数据
-		List<Transaction> tsaList = new ArrayList<Transaction>();
+		genesisBlock.setNonce(1); // 创世区块的nonce通常是固定的或简单计算的
+
+		List<Transaction> tsaList = new ArrayList<>();
 		Transaction tsa = new Transaction();
-		tsa.setId("1");
+		tsa.setId("1"); // 固定的创世交易ID
+		tsa.setTimestamp(genesisBlock.getTimestamp()); // 可以使用区块时间戳
 		tsa.setData("这是创世区块");
 		tsaList.add(tsa);
+
 		Transaction tsa2 = new Transaction();
 		tsa2.setId("2");
+		tsa2.setTimestamp(genesisBlock.getTimestamp());
 		tsa2.setData("区块链高度为：1");
-		tsaList.add(tsa2);		
+		tsaList.add(tsa2);
 		genesisBlock.setTransactions(tsaList);
-		//设置创世区块的hash值
-		genesisBlock.setHash(calculateHash("",tsaList,1));
-		//添加到已打包保存的业务数据集合中
-		blockCache.getPackedTransactions().addAll(tsaList);
-		//添加到区块链中
-		blockCache.getBlockChain().add(genesisBlock);
+
+		// 创世区块没有前一个哈希，通常设为 "0" 或一个特定字符串
+		genesisBlock.setPreviousHash("0");
+		genesisBlock.setHash(calculateHash(genesisBlock.getPreviousHash(), tsaList, genesisBlock.getNonce()));
+
+		// 将创世区块的交易添加到已打包交易缓存 (BlockCache中的packedTransactions)
+		if (blockCache.getPackedTransactions() != null) { // 防御性检查
+			blockCache.getPackedTransactions().addAll(tsaList);
+		} else {
+			logger.warn("BlockCache中的packedTransactions列表为null，无法添加创世区块交易。");
+		}
+
+		// 将创世区块添加到区块链缓存
+		if (blockCache.getBlockChain() != null) {
+			blockCache.getBlockChain().add(genesisBlock);
+		} else {
+			logger.warn("BlockCache中的blockChain列表为null，无法添加创世区块。");
+		}
+
+		logger.info("创世区块创建成功: Hash={}", genesisBlock.getHash());
 		return JSON.toJSONString(genesisBlock);
 	}
-	
+
 	/**
-	 * 创建新区块
-	 * @param nonce
-	 * @param previousHash
-	 * @param hash
-	 * @param blockTxs
-	 * @return
+	 * 创建新区块模型对象 (尚未添加到链)。
+	 * @param nonce 工作量证明计数器。
+	 * @param previousHash 前一个区块的哈希。
+	 * @param hash 当前区块的哈希。
+	 * @param blockTxs 当前区块包含的交易列表。
+	 * @return 创建的Block对象。
 	 */
 	public Block createNewBlock(int nonce, String previousHash, String hash, List<Transaction> blockTxs) {
 		Block block = new Block();
-		block.setIndex(blockCache.getBlockChain().size() + 1);
-		//时间戳
+		// 区块索引应基于当前链的最新区块
+		int currentIndex = 1; // 默认为1（如果链为空，则新区块是创世块后的第一个）
+		Block latestBlock = blockCache.getLatestBlock();
+		if (latestBlock != null) {
+			currentIndex = latestBlock.getIndex() + 1;
+		} else if (blockCache.getBlockChain() != null && !blockCache.getBlockChain().isEmpty()){
+			// 这种情况理论上不应发生，如果latestBlock为null但链不为空
+			logger.warn("BlockCache.getLatestBlock() 返回null，但区块链非空。索引计算可能不准确。");
+			currentIndex = blockCache.getBlockChain().size() + 1;
+		} // 如果链也为空，则currentIndex保持为1（但这通常意味着是创世块，不由createNewBlock创建）
+
+		block.setIndex(currentIndex);
 		block.setTimestamp(System.currentTimeMillis());
 		block.setTransactions(blockTxs);
-		//工作量证明，计算正确hash值的次数
 		block.setNonce(nonce);
-		//上一区块的哈希
 		block.setPreviousHash(previousHash);
-		//当前区块的哈希
 		block.setHash(hash);
-		if (addBlock(block)) {
-			return block;
-		}
-		return null;
+
+		// 注意：此方法仅创建Block对象，实际添加到链的操作在 addBlock 中完成
+		return block;
 	}
 
 	/**
-	 * 添加新区块到当前节点的区块链中
-	 * 
-	 * @param newBlock
+	 * 添加新区块到当前节点的区块链中 (在BlockCache中)。
+	 * @param newBlock 要添加的新区块。
+	 * @return 如果添加成功（区块有效）返回 true，否则返回 false。
 	 */
 	public boolean addBlock(Block newBlock) {
-		//先对新区块的合法性进行校验
-		if (isValidNewBlock(newBlock, blockCache.getLatestBlock())) {
+		Block latestBlock = blockCache.getLatestBlock();
+		if (latestBlock == null && newBlock.getIndex() != 1) {
+			// 如果链是空的（除了可能的创世块），那么新区块必须是创世块或者索引紧随其后
+			// 这里的逻辑是，如果还没有区块，那么添加的第一个非创世块（如果允许）
+			// 或者这里应该强制在添加任何其他块之前必须有创世块
+			logger.warn("尝试向空链（或无有效最新区块）中添加非初始区块，索引：{}", newBlock.getIndex());
+			// return false; // 根据策略决定是否允许
+		}
+
+		if (isValidNewBlock(newBlock, latestBlock)) { // latestBlock 可能为 null (对于创世块后的第一个块)
 			blockCache.getBlockChain().add(newBlock);
 			// 新区块的业务数据需要加入到已打包的交易集合里去
-			blockCache.getPackedTransactions().addAll(newBlock.getTransactions());
+			if (newBlock.getTransactions() != null) {
+				blockCache.getPackedTransactions().addAll(newBlock.getTransactions());
+			}
+			logger.info("新区块 (索引: {}) 已添加到BlockCache。", newBlock.getIndex());
 			return true;
 		}
+		logger.warn("添加新区块 (索引: {}) 失败，区块无效。", newBlock.getIndex());
 		return false;
 	}
-	
+
 	/**
-	 * 验证新区块是否有效
-	 * 
-	 * @param newBlock
-	 * @param previousBlock
-	 * @return
+	 * 验证新区块是否有效。
+	 * @param newBlock 要验证的新区块。
+	 * @param previousBlock 前一个区块 (如果newBlock不是创世区块)。
+	 * @return 如果有效返回true，否则返回false。
 	 */
 	public boolean isValidNewBlock(Block newBlock, Block previousBlock) {
-		if (!previousBlock.getHash().equals(newBlock.getPreviousHash())) {
-			System.out.println("新区块的前一个区块hash验证不通过");
+		if (newBlock == null) {
+			logger.warn("验证区块失败：新区块为null。");
 			return false;
-		} else {
-			// 验证新区块hash值的正确性
-			String hash = calculateHash(newBlock.getPreviousHash(), newBlock.getTransactions(), newBlock.getNonce());
-			if (!hash.equals(newBlock.getHash())) {
-				System.out.println("新区块的hash无效: " + hash + " " + newBlock.getHash());
+		}
+		// 对于创世区块（或链上的第一个区块），previousBlock可能为null
+		if (previousBlock != null) { // 验证与前一个区块的连接
+			if (newBlock.getIndex() != previousBlock.getIndex() + 1) {
+				logger.warn("新区块索引无效: 期望 {}, 实际 {}", previousBlock.getIndex() + 1, newBlock.getIndex());
 				return false;
 			}
-			if (!isValidHash(newBlock.getHash())) {
+			if (newBlock.getPreviousHash() == null || !newBlock.getPreviousHash().equals(previousBlock.getHash())) {
+				logger.warn("新区块的前一个区块哈希验证不通过: 期望 {}, 实际 {}", previousBlock.getHash(), newBlock.getPreviousHash());
 				return false;
 			}
+		} else { // 如果是链上的第一个块（例如，索引为1，但非我们代码中定义的创世块逻辑）
+			if (newBlock.getIndex() != 1) { // 通常链上第一个块索引为1
+				logger.warn("链上第一个区块的索引 {} 不为1。", newBlock.getIndex());
+				// return false; // 根据您的创世块策略决定
+			}
+			// previousHash 可能是"0"或特定值，这取决于您的创世块定义
 		}
 
+		// 验证新区块自身的哈希计算是否正确
+		String calculatedHash = calculateHash(newBlock.getPreviousHash(), newBlock.getTransactions(), newBlock.getNonce());
+		if (newBlock.getHash() == null || !newBlock.getHash().equals(calculatedHash)) {
+			logger.warn("新区块的哈希值计算不正确: 计算值 {}, 区块内记录值 {}", calculatedHash, newBlock.getHash());
+			return false;
+		}
+
+		// 验证哈希是否满足挖矿难度 (例如以特定数量的0开头)
+		if (!isValidHash(newBlock.getHash())) {
+			logger.warn("新区块的哈希 {} 不满足挖矿难度要求。", newBlock.getHash());
+			return false;
+		}
 		return true;
 	}
-	
+
 	/**
-	 * 验证hash值是否满足系统条件
-	 * 
-	 * @param hash
-	 * @return
+	 * 验证哈希值是否满足系统挖矿难度条件。
+	 * @param hash 要验证的哈希字符串。
+	 * @return 如果满足条件返回true。
 	 */
 	public boolean isValidHash(String hash) {
-		return hash.startsWith("0000");
+		if (hash == null) return false;
+		// 从BlockCache获取难度系数，例如前N位是0
+		// 这里的 blockCache.getDifficulty() 返回的是0的个数
+		String prefix = new String(new char[blockCache.getDifficulty()]).replace('\0', '0');
+		return hash.startsWith(prefix);
 	}
-	
-	/**
-	 * 验证整个区块链是否有效
-	 * @param chain
-	 * @return
-	 */
-	public boolean isValidChain(List<Block> chain) {
-		Block block = null;
-		Block lastBlock = chain.get(0);
-		int currentIndex = 1;
-		while (currentIndex < chain.size()) {
-			block = chain.get(currentIndex);
 
-			if (!isValidNewBlock(block, lastBlock)) {
+	/**
+	 * 验证整条区块链是否有效。
+	 * @param chainToValidate 要验证的区块链。
+	 * @return 如果有效返回true。
+	 */
+	public boolean isValidChain(List<Block> chainToValidate) {
+		if (chainToValidate == null || chainToValidate.isEmpty()) {
+			logger.warn("尝试验证空或null的区块链。");
+			return false; // 或者根据定义，空链可以是有效的
+		}
+
+		// 验证创世区块 (假设我们有一个标准的创世区块可以比较，或者只验证第一个区块的内部一致性)
+		// Block genesisBlock = chainToValidate.get(0);
+		// if (!isValidGenesisBlock(genesisBlock)) return false; // 需要 isValidGenesisBlock 方法
+
+		Block previousBlock = chainToValidate.get(0);
+		// 验证第一个区块的内部一致性 (如果不是创世块的严格比较)
+		if (!isValidNewBlock(previousBlock, null)) { // 假设第一个块的previousBlock是null
+			logger.warn("链中的第一个区块 (索引 {}) 自身无效。", previousBlock.getIndex());
+			return false;
+		}
+
+		for (int i = 1; i < chainToValidate.size(); i++) {
+			Block currentBlock = chainToValidate.get(i);
+			if (!isValidNewBlock(currentBlock, previousBlock)) {
+				logger.warn("区块链在索引 {} 处无效 (当前区块哈希 {})。", currentBlock.getIndex(), currentBlock.getHash());
 				return false;
 			}
-
-			lastBlock = block;
-			currentIndex++;
+			previousBlock = currentBlock;
 		}
 		return true;
 	}
 
 	/**
-	 * 替换本地区块链
-	 * 
-	 * @param newBlocks
+	 * 如果接收到的区块链比当前节点的长且有效，则替换本地区块链。
+	 * @param newBlocks 接收到的新区块链。
 	 */
+	@Transactional // 涉及到 packedTransactions 的修改，也应是事务性的
 	public void replaceChain(List<Block> newBlocks) {
-		List<Block> localBlockChain = blockCache.getBlockChain();
-		List<Transaction> localpackedTransactions = blockCache.getPackedTransactions();
+		List<Block> localBlockChain = blockCache.getBlockChain(); // 获取当前节点的链
+
 		if (isValidChain(newBlocks) && newBlocks.size() > localBlockChain.size()) {
-			localBlockChain = newBlocks;
-			//替换已打包保存的业务数据集合
-			localpackedTransactions.clear();
-			localBlockChain.forEach(block -> {
-				localpackedTransactions.addAll(block.getTransactions());
+			logger.info("接收到的区块链有效且更长。将替换本地区块链 (本地长度: {}, 接收长度: {})。",
+					localBlockChain.size(), newBlocks.size());
+			blockCache.setBlockChain(new ArrayList<>(newBlocks)); // 更新BlockCache中的链
+
+			// 替换已打包保存的业务数据集合
+			List<Transaction> newPackedTransactions = new ArrayList<>();
+			newBlocks.forEach(block -> {
+				if (block.getTransactions() != null) {
+					newPackedTransactions.addAll(block.getTransactions());
+				}
 			});
-			blockCache.setBlockChain(localBlockChain);
-			blockCache.setPackedTransactions(localpackedTransactions);
-			System.out.println("替换后的本节点区块链："+JSON.toJSONString(blockCache.getBlockChain()));
+			blockCache.setPackedTransactions(newPackedTransactions); // 更新BlockCache中的已打包交易
+
+			// 注意：这里的逻辑没有处理分叉后，本地交易池中可能与新链冲突或已包含的交易。
+			// 一个更完整的实现可能需要将本地交易池中的交易与新链进行比对，
+			// 移除已在新链中确认的交易，并重新验证其余交易的有效性。
+			logger.info("本地区块链已成功替换。");
 		} else {
-			System.out.println("接收的区块链无效");
+			logger.warn("接收到的区块链无效或不够长，不替换本地区块链。");
 		}
 	}
 
 	/**
-	 * 计算区块的hash
-	 * 
-	 * @param previousHash
-	 * @param currentTransactions
-	 * @param nonce
-	 * @return
+	 * 计算给定参数的区块哈希值 (SHA256)。
+	 * @param previousHash 前一个区块的哈希。
+	 * @param currentTransactions 当前区块的交易列表。
+	 * @param nonce 工作量证明计数器。
+	 * @return 计算得到的哈希字符串。
 	 */
 	public String calculateHash(String previousHash, List<Transaction> currentTransactions, int nonce) {
-		return CryptoUtil.SHA256(previousHash + JSON.toJSONString(currentTransactions) + nonce);
+		// 确保previousHash不为null，对于创世块可能是"0"
+		String prevHashForCalc = (previousHash == null) ? "0" : previousHash;
+		// 使用FastJSON将交易列表序列化为JSON字符串
+		String transactionsJson = JSON.toJSONString(currentTransactions);
+		return CryptoUtil.SHA256(prevHashForCalc + transactionsJson + nonce);
 	}
 
 	/**
-	 * 添加新的交易到交易池。
-	 * 在实际应用中，这里应该包含对交易有效性的验证（如签名验证）。
-	 *
-	 * @param transaction 要添加的交易。
+	 * 添加新的交易到待处理交易池 (数据库)。
+	 * @param transaction 要添加的交易模型对象。
 	 * @return 如果添加成功返回 true，否则返回 false。
 	 */
+	@Transactional
 	public boolean addTransaction(Transaction transaction) {
-		// 1. 基本验证
-		if (transaction == null || transaction.getId() == null /* || !isTransactionValid(transaction) */) {
-			System.err.println("Invalid transaction received (null or missing ID). Ignoring.");
+		if (transaction == null || transaction.getId() == null || transaction.getId().isEmpty()) {
+			logger.warn("尝试添加无效的交易 (ID为空或对象为null)。");
 			return false;
 		}
-		// TODO: 在此添加更严格的交易验证逻辑 (例如验证签名, 检查格式等)
-
-
-		// 2. 检查交易是否已在池中 (基于交易 ID)
-		// 使用 stream API 提高效率
-		if (transactionPool.stream().anyMatch(tx -> transaction.getId().equals(tx.getId()))) {
-			System.out.println("Transaction " + transaction.getId() + " already in pool. Ignoring.");
-			return false; // 已经存在，添加失败
+		if (pendingTransactionRepository.existsById(transaction.getId())) {
+			logger.info("交易 '{}' 已存在于待处理池中，将被忽略。", transaction.getId());
+			return false;
 		}
 
-		// 3. 添加到交易池
-		boolean added = transactionPool.add(transaction);
-		if (added) {
-			System.out.println("Transaction added to pool: " + transaction.getId() + " (Pool size: " + transactionPool.size() + ")");
-			// 4. (可选) 广播新交易给网络
-			// if (p2pService != null) {
-			//     p2pService.broadcast(/* 构造交易消息, e.g., MessageUtil.newTransactionMessage(transaction) */);
-			// }
-		} else {
-			System.err.println("Failed to add transaction " + transaction.getId() + " to the pool.");
+		PendingTransactionEntity entity = new PendingTransactionEntity(
+				transaction.getId(),
+				transaction.getPublicKey(),
+				transaction.getSign(),
+				transaction.getTimestamp(),
+				transaction.getData()
+		);
+		// entity.setAddedToPoolAt() 会在 @PrePersist 中自动设置
+
+		try {
+			pendingTransactionRepository.save(entity);
+			logger.info("交易 '{}' 已成功添加到待处理池 (数据库)。当前池大小: {}", transaction.getId(), pendingTransactionRepository.count());
+			return true;
+		} catch (Exception e) {
+			logger.error("添加交易 '{}' 到待处理池时发生数据库错误: {}", transaction.getId(), e.getMessage(), e);
+			return false;
 		}
-		return added;
+	}
+
+	/**
+	 * 从待处理交易池 (数据库) 中获取所有交易，按加入时间排序。
+	 * @return 交易模型对象的列表。
+	 */
+	@Transactional(readOnly = true)
+	public List<Transaction> getTransactionPool() {
+		List<PendingTransactionEntity> entities = pendingTransactionRepository.findAllByOrderByAddedToPoolAtAsc();
+		if (entities.isEmpty()) {
+			return new ArrayList<>();
+		}
+		return entities.stream().map(entity -> {
+			Transaction tx = new Transaction();
+			tx.setId(entity.getId());
+			tx.setPublicKey(entity.getPublicKey());
+			tx.setSign(entity.getSign());
+			tx.setTimestamp(entity.getTimestamp());
+			tx.setData(entity.getData());
+			return tx;
+		}).collect(Collectors.toList());
+	}
+
+	/**
+	 * (已弃用，请使用 removeTransactionsFromPool) 从待处理交易池 (数据库) 中清除所有交易。
+	 * @deprecated 应使用 removeTransactionsFromPool 来精确移除已打包的交易。
+	 */
+	@Transactional
+	@Deprecated
+	public void clearTransactionPool() {
+		long countBefore = pendingTransactionRepository.count();
+		pendingTransactionRepository.deleteAll();
+		logger.info("(clearTransactionPool - deprecated) 已从数据库清空待处理交易池。之前数量: {}, 当前数量: 0", countBefore);
+	}
+
+	/**
+	 * (重要) 从待处理交易池 (数据库) 中移除指定的交易列表。
+	 * 这在 PowService 中打包交易后调用会更安全。
+	 * @param transactionsToRemove 要移除的交易列表 (模型对象)
+	 */
+	@Transactional
+	public void removeTransactionsFromPool(List<Transaction> transactionsToRemove) {
+		if (transactionsToRemove == null || transactionsToRemove.isEmpty()) {
+			logger.debug("没有需要从交易池中移除的交易。");
+			return;
+		}
+		List<String> transactionIdsToRemove = transactionsToRemove.stream()
+				.map(Transaction::getId)
+				.filter(id -> id != null && !id.isEmpty())
+				.collect(Collectors.toList());
+		if (transactionIdsToRemove.isEmpty()){
+			logger.debug("要移除的交易ID列表为空或所有ID均无效。");
+			return;
+		}
+		try {
+			// 调用修改后的仓库方法
+			pendingTransactionRepository.deleteAllByIdIn(transactionIdsToRemove);
+			logger.info("成功从待处理交易池中移除了 {} 个已打包的交易 (ID: {})。",
+					transactionIdsToRemove.size(), transactionIdsToRemove);
+		} catch (Exception e) {
+			logger.error("从待处理交易池移除已打包交易时出错: {}", e.getMessage(), e);
+			// 考虑更健壮的错误处理
+		}
 	}
 
 	/**
 	 * 从区块链查找特定 DID 的最新锚定文档哈希。
-	 * 遍历区块链，查找包含指定 DID 的 "DID_ANCHOR" 类型交易。
-	 *
+	 * 此方法查询的是已打包在区块中的交易。
 	 * @param did DID 字符串。
 	 * @return 最新的锚定文档哈希，如果未找到则返回 null。
 	 */
@@ -243,62 +404,41 @@ public class BlockService {
 		if (did == null || did.isEmpty()) {
 			return null;
 		}
-		List<Block> chain = blockCache.getBlockchain(); // 获取当前链
+		List<Block> chain = blockCache.getBlockchain();
 		String latestHash = null;
-		long latestTimestamp = -1;
+		long latestTimestamp = -1L; // 初始化为不可能的时间戳
 
-		// 从最新的区块开始向前查找效率更高
+		// 从最新的区块开始向前查找，效率更高
 		for (int i = chain.size() - 1; i >= 0; i--) {
 			Block block = chain.get(i);
 			if (block.getTransactions() != null) {
 				for (Transaction tx : block.getTransactions()) {
-					// 检查交易数据是否包含 DID 锚定信息
 					if (tx.getData() != null) {
 						try {
-							// 解析 JSON 数据到 Map
+							// 使用注入的objectMapper进行JSON解析
 							Map<String, String> txData = objectMapper.readValue(tx.getData(), new TypeReference<Map<String, String>>() {});
-
-							// 检查是否是 DID 锚定交易 ('type' 字段)
-							// 并且 'did' 字段匹配
-							// 并且包含 'documentHash' 字段
 							if ("DID_ANCHOR".equals(txData.get("type")) &&
 									did.equals(txData.get("did")) &&
-									txData.containsKey("documentHash"))
-							{
-								// 如果找到多个锚定记录，取时间戳最新的一个
-								if (block.getTimestamp() > latestTimestamp) {
+									txData.containsKey("documentHash")) {
+								if (block.getTimestamp() > latestTimestamp) { // 比较时间戳，取最新的
 									latestTimestamp = block.getTimestamp();
 									latestHash = txData.get("documentHash");
-									System.out.println("Found potential DID anchor for " + did + " in block " + block.getIndex() + " with hash " + latestHash);
 								}
 							}
 						} catch (Exception e) {
-							// JSON 解析错误或格式不匹配，忽略此交易数据
-							// 可以选择性地记录日志:
-							// System.err.println("Minor error parsing transaction data in block " + block.getIndex() + ": " + e.getMessage());
+							// 在解析特定交易数据时出错，记录警告并继续处理其他交易
+							logger.warn("解析交易数据时发生错误，区块索引 {}，交易ID {}: {}", block.getIndex(), tx.getId(), e.getMessage());
 						}
 					}
 				}
 			}
-			// 如果已经找到了一个哈希，并且当前区块的时间戳远早于最新找到的时间戳，
-			// 可以考虑提前终止循环以优化（假设时间戳大致递增）。
-			// 但为了确保找到绝对最新的，遍历完整条链更可靠。
 		}
 
 		if (latestHash != null) {
-			System.out.println("Found latest anchor hash for DID " + did + ": " + latestHash);
+			logger.debug("为DID '{}' 找到的最新锚定哈希: {}", did, latestHash);
 		} else {
-			System.out.println("No anchor hash found for DID " + did + " in the blockchain.");
+			logger.debug("未在区块链中为DID '{}' 找到锚定哈希。", did);
 		}
-		return latestHash; // 返回找到的最新哈希，或 null
-	}
-
-	public List<Transaction> getTransactionPool() {
-		return new ArrayList<>(this.transactionPool); // 返回副本以防并发修改问题，或者直接返回引用并注意同步
-	}
-
-	public void clearTransactionPool() {
-		this.transactionPool.clear();
-		System.out.println("交易池已清空。");
+		return latestHash;
 	}
 }
