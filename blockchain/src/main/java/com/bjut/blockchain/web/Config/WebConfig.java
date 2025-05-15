@@ -26,7 +26,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOrigins("http://localhost:63342", "http://127.0.0.1:63342", "http://localhost:8080", "http://localhost:8090") // 添加可能的后端端口8090
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD")
                 .allowedHeaders("*")
-                .allowCredentials(true);
+                .allowCredentials(true)
+                .maxAge(3600);
     }
 
     @Override
@@ -77,6 +78,31 @@ public class WebConfig implements WebMvcConfigurer {
                 logger.trace("AuthInterceptor: OPTIONS请求，直接放行 URI: {}", requestUri);
                 response.setStatus(HttpServletResponse.SC_OK);
                 return true;
+            }
+            
+            // 新增：检查HTTP请求头中的认证信息
+            String authToken = request.getHeader("X-Auth-Token");
+            String authSession = request.getHeader("X-Auth-Session");
+            String authDid = request.getHeader("X-Auth-DID");
+            
+            if (authToken != null && !authToken.isEmpty()) {
+                logger.trace("AuthInterceptor: 请求中包含Auth-Token: {}, DID: {}", authToken, authDid);
+                // 简单验证，实际应用中可能需要更复杂的令牌验证逻辑
+                if (("authenticated".equals(authToken) || "anonymous_authenticated".equals(authToken)) && 
+                    authSession != null && !authSession.isEmpty()) {
+                    // 在会话中设置认证标记
+                    HttpSession session = request.getSession(true);
+                    if (authDid != null && !authDid.isEmpty()) {
+                        // DID认证
+                        session.setAttribute("loggedInUserDid", authDid);
+                        logger.trace("AuthInterceptor: 从请求头设置DID认证 - DID: {}", authDid);
+                    } else {
+                        // 匿名认证
+                        session.setAttribute("anonymouslyLoggedIn", true);
+                        logger.trace("AuthInterceptor: 从请求头设置匿名认证");
+                    }
+                    return true;
+                }
             }
 
             HttpSession session = request.getSession(false); // 获取现有会话，如果不存在则不创建
