@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DID 登录 - 区块链应用 (Web Crypto API + IndexedDB)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .login-container { min-width: 380px; }
+        .hidden { display: none; }
+        textarea { white-space: pre; overflow-wrap: normal; overflow-x: scroll; font-size: 0.8em; }
+        .code-block {
+            background-color: #f0f0f0;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85em;
+            word-break: break-all;
+            margin-top: 4px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .button-action {
+            background-color: #4F46E5; /* Indigo */
+            color: white;
+        }
+        .button-action:hover {
+            background-color: #4338CA;
+        }
+        .button-secondary-action { /* 新增：匿名登录按钮样式 */
+            background-color: #10B981; /* Green */
+            color: white;
+        }
+        .button-secondary-action:hover {
+            background-color: #059669;
+        }
+        .button-danger {
+            background-color: #DC2626; /* Red */
+            color: white;
+        }
+        .button-danger:hover {
+            background-color: #B91C1C;
+        }
+        #keyManagementArea button, #keyManagementArea select { margin-top: 8px; }
+        #storedKeysDisplay ul { list-style-type: none; padding-left: 0; }
+        #storedKeysDisplay li { padding: 5px; border-bottom: 1px solid #eee; cursor: pointer; }
+        #storedKeysDisplay li:hover { background-color: #e9e9e9; }
+        #storedKeysDisplay li.selected-did { background-color: #d1d5db; font-weight: bold; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<div class="login-container bg-white p-8 md:p-12 rounded-lg shadow-xl w-full max-w-lg">
+    <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">身份认证</h2>
+
+    <div id="authOptions" class="mb-6 space-y-3">
+        <h3 class="text-lg font-semibold text-gray-700 mb-2">选择认证方式:</h3>
+        <button id="showDidLoginButton" class="w-full py-2 px-4 text-sm button-action rounded-md">DID 身份认证</button>
+        <button id="anonymousLoginButton" class="w-full py-2 px-4 text-sm button-secondary-action rounded-md">匿名访问 (临时密钥)</button>
+    </div>
+
+
+    <div id="didAuthSection" class="hidden">
+        <h3 class="text-xl font-semibold text-center text-gray-800 mb-4">DID 身份认证 (浏览器密钥 - IndexedDB)</h3>
+        <div id="keyManagementArea" class="mb-6 p-4 border rounded-md bg-slate-50">
+            <h3 class="text-lg font-semibold text-gray-700 mb-2">浏览器密钥与DID管理 (IndexedDB)</h3>
+            <button id="generateAndRegisterDidButton" class="w-full py-2 px-4 text-sm button-action rounded-md">1. 生成新密钥对并注册DID</button>
+
+            <div id="storedKeysSection" class="mt-3">
+                <label for="didSelector" class="block text-sm font-medium text-gray-700">选择已存储的DID进行操作:</label>
+                <select id="didSelector" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <option value="">-- 无可用密钥 --</option>
+                </select>
+                <div class="flex space-x-2 mt-2">
+                    <button id="selectDidButton" class="flex-1 py-2 px-4 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md">使用选中DID登录</button>
+                    <button id="deleteSelectedDidButton" class="flex-1 py-2 px-4 text-sm button-danger rounded-md">删除选中DID和密钥</button>
+                </div>
+            </div>
+            <p class="mt-2 text-xs text-gray-500">密钥存储在浏览器的IndexedDB中，刷新页面后依然可用（除非清除浏览器数据）。</p>
+        </div>
+
+        <div id="step1DidInput">
+            <form id="didForm" class="space-y-6">
+                <div>
+                    <label for="didUiInput" class="block text-sm font-medium text-gray-700 mb-1">要登录的 DID:</label>
+                    <input type="text" id="didUiInput" name="didUiInput" required readonly
+                           class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-100 focus:outline-none sm:text-sm"
+                           placeholder="请从上方选择或生成DID">
+                </div>
+                <div>
+                    <button id="getChallengeButton" type="submit"
+                            class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                        2. 获取挑战 (DID登录)
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div id="step2SignChallenge" class="hidden space-y-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">DID:</label>
+                <p id="displayDid" class="code-block"></p>
+            </div>
+            <div>
+                <label for="challenge" class="block text-sm font-medium text-gray-700 mb-1">待签名挑战:</label>
+                <textarea id="challenge" name="challenge" readonly
+                          class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-20"></textarea>
+            </div>
+            <div>
+                <label for="keyIdUiInput" class="block text-sm font-medium text-gray-700 mb-1">用于签名的密钥 ID:</label>
+                <input type="text" id="keyIdUiInput" name="keyIdUiInput" readonly
+                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-100 focus:outline-none sm:text-sm">
+            </div>
+            <div>
+                <button id="signChallengeClientSideButton" type="button"
+                        class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium button-action focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                    3. 使用浏览器密钥签名挑战 (DID登录)
+                </button>
+            </div>
+            <div>
+                <label for="signature" class="block text-sm font-medium text-gray-700 mb-1">签名 (Base64):</label>
+                <textarea id="signature" name="signature" readonly
+                          class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-20"></textarea>
+            </div>
+            <div>
+                <button id="verifyButton" type="button"
+                        class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out">
+                    4. 验证登录 (DID登录)
+                </button>
+                <button id="backToDidSelectionButton" type="button"
+                        class="mt-2 w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    返回选择DID
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="anonymousAuthSection" class="hidden mt-6 space-y-4 p-4 border rounded-md bg-slate-50">
+        <h3 class="text-xl font-semibold text-center text-gray-800 mb-4">匿名访问流程</h3>
+        <button id="initiateAnonymousAuthButton" class="w-full py-2 px-4 text-sm button-secondary-action rounded-md">1. 开始匿名认证 (获取挑战)</button>
+        <div id="anonymousChallengeDisplay" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1">匿名挑战:</label>
+            <p id="anonymousChallengeText" class="code-block"></p>
+            <button id="signAnonymousChallengeButton" class="mt-2 w-full py-2 px-4 text-sm button-action rounded-md">2. 生成临时密钥并签名挑战</button>
+        </div>
+        <div id="anonymousVerificationDisplay" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1">临时公钥 (Base64 SPKI):</label>
+            <textarea id="anonymousTempPublicKey" readonly class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-16"></textarea>
+            <label class="block text-sm font-medium text-gray-700 mb-1 mt-2">签名 (Base64):</label>
+            <textarea id="anonymousSignature" readonly class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm h-16"></textarea>
+            <button id="verifyAnonymousAuthButton" class="mt-2 w-full py-2 px-4 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md">3. 验证匿名访问</button>
+        </div>
+        <button id="backToAuthOptionsButton" class="mt-4 w-full py-2 px-4 text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md">返回选择认证方式</button>
+    </div>
+
+
+    <div id="messageArea" class="mt-6 text-center text-sm"></div>
+    <div id="createdDidInfo" class="hidden mt-2 p-3 bg-gray-100 rounded text-xs space-y-1"></div>
+
+</div>
+
+<script>
+    // --- DOM 元素获取 ---
+    const authOptionsDiv = document.getElementById('authOptions');
+    const showDidLoginButton = document.getElementById('showDidLoginButton');
+    const anonymousLoginButton = document.getElementById('anonymousLoginButton');
+
+    const didAuthSection = document.getElementById('didAuthSection');
+    const anonymousAuthSection = document.getElementById('anonymousAuthSection');
+
+    const generateAndRegisterDidButton = document.getElementById('generateAndRegisterDidButton');
+    const didSelector = document.getElementById('didSelector');
+    const selectDidButton = document.getElementById('selectDidButton');
+    const deleteSelectedDidButton = document.getElementById('deleteSelectedDidButton');
+
+    const didUiInput = document.getElementById('didUiInput');
+    const didForm = document.getElementById('didForm');
+    const getChallengeButton = document.getElementById('getChallengeButton'); // DID登录获取挑战按钮
+
+    const step1DidInput = document.getElementById('step1DidInput');
+    const step2SignChallenge = document.getElementById('step2SignChallenge');
+    const displayDidElem = document.getElementById('displayDid');
+    const challengeElem = document.getElementById('challenge'); // DID登录的挑战元素
+    const keyIdUiInput = document.getElementById('keyIdUiInput');
+    const signChallengeClientSideButton = document.getElementById('signChallengeClientSideButton');
+    const signatureElem = document.getElementById('signature'); // DID登录的签名元素
+    const verifyButton = document.getElementById('verifyButton');
+    const backToDidSelectionButton = document.getElementById('backToDidSelectionButton');
+
+    // 新增：匿名认证相关DOM元素
+    const initiateAnonymousAuthButton = document.getElementById('initiateAnonymousAuthButton');
+    const anonymousChallengeDisplay = document.getElementById('anonymousChallengeDisplay');
+    const anonymousChallengeTextElem = document.getElementById('anonymousChallengeText');
+    const signAnonymousChallengeButton = document.getElementById('signAnonymousChallengeButton');
+    const anonymousVerificationDisplay = document.getElementById('anonymousVerificationDisplay');
+    const anonymousTempPublicKeyElem = document.getElementById('anonymousTempPublicKey');
+    const anonymousSignatureElem = document.getElementById('anonymousSignature');
+    const verifyAnonymousAuthButton = document.getElementById('verifyAnonymousAuthButton');
+    const backToAuthOptionsButton = document.getElementById('backToAuthOptionsButton');
+
+
+    const messageArea = document.getElementById('messageArea');
+    const createdDidInfo = document.getElementById('createdDidInfo');
+
+    const SPRING_BOOT_API_BASE_URL = 'http://localhost:8080/api/did'; // 确保端口是8090
+
+    // --- IndexedDB 配置 (与之前相同) ---
+    const DB_NAME = "DIDKeyStore";
+    const DB_VERSION = 1;
+    const OBJECT_STORE_NAME = "userKeys";
+    let db;
+
+    // --- IndexedDB 辅助函数 (与之前相同, 此处省略以保持简洁, 请确保它们已在您的代码中) ---
+    function openDb() { /* ... */ }
+    function addKeyToDb(keyInfo) { /* ... */ }
+    function getKeyFromDb(did) { /* ... */ }
+    function getAllKeysFromDb() { /* ... */ }
+    function deleteKeyFromDb(did) { /* ... */ }
+    // --- 粘贴之前的 IndexedDB 辅助函数实现到这里 ---
+    function openDb() {
+        return new Promise((resolve, reject) => {
+            if (db) {
+                resolve(db);
+                return;
+            }
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = (event) => reject("打开IndexedDB数据库失败: " + event.target.errorCode);
+            request.onsuccess = (event) => {
+                db = event.target.result;
+                resolve(db);
+            };
+            request.onupgradeneeded = (event) => {
+                const storeDb = event.target.result;
+                if (!storeDb.objectStoreNames.contains(OBJECT_STORE_NAME)) {
+                    const objectStore = storeDb.createObjectStore(OBJECT_STORE_NAME, { keyPath: "did" });
+                    objectStore.createIndex("keyId", "keyId", { unique: false });
+                    console.log("IndexedDB object store '" + OBJECT_STORE_NAME + "' 已创建.");
+                }
+            };
+        });
+    }
+
+    function addKeyToDb(keyInfo) { // keyInfo: {did, keyId, publicKeyBase64, privateKey}
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readwrite");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.put(keyInfo); // put 会覆盖同主键的记录
+                request.onsuccess = () => resolve();
+                request.onerror = (event) => reject("添加密钥到IndexedDB失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function getKeyFromDb(did) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readonly");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.get(did);
+                request.onsuccess = (event) => resolve(event.target.result); // 如果没找到会是undefined
+                request.onerror = (event) => reject("从IndexedDB获取密钥失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function getAllKeysFromDb() {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readonly");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.getAll(); // 获取所有记录
+                request.onsuccess = (event) => resolve(event.target.result);
+                request.onerror = (event) => reject("从IndexedDB获取所有密钥失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function deleteKeyFromDb(did) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const currentDb = await openDb();
+                const transaction = currentDb.transaction([OBJECT_STORE_NAME], "readwrite");
+                const store = transaction.objectStore(OBJECT_STORE_NAME);
+                const request = store.delete(did);
+                request.onsuccess = () => resolve();
+                request.onerror = (event) => reject("从IndexedDB删除密钥失败: " + event.target.error);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+    // --- Web Crypto API 辅助函数 (与之前相同, 此处省略以保持简洁) ---
+    function arrayBufferToBase64(buffer) { /* ... */ }
+    async function generateRsaKeyPair() { /* ... */ } // 这个函数生成的是 RSASSA-PKCS1-v1_5，我们将为匿名认证使用它
+    async function exportPublicKeyAsBase64Spki(publicKey) { /* ... */ }
+    // --- 粘贴之前的 Web Crypto API 辅助函数实现到这里 ---
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    async function generateRsaKeyPair() { // 用于DID注册和匿名认证的临时密钥
+        return await window.crypto.subtle.generateKey(
+            {
+                name: "RSASSA-PKCS1-v1_5", // 与后端 CryptoUtil.verify 匹配
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+                hash: "SHA-256", // 签名时使用的哈希算法
+            },
+            true, // 可提取私钥
+            ["sign", "verify"] // 密钥用途
+        );
+    }
+
+    async function exportPublicKeyAsBase64Spki(publicKey) { // 导出为SPKI格式并Base64编码
+        const exportedSpki = await window.crypto.subtle.exportKey("spki", publicKey);
+        return arrayBufferToBase64(exportedSpki);
+    }
+
+
+    // --- 应用程序状态 ---
+    let currentChallengeText = '';      // DID登录流程中的挑战
+    let currentActiveDid = null;
+    let currentActiveKeyId = null;
+
+    let currentAnonymousChallenge = ''; // 匿名认证流程中的挑战
+    let temporaryKeyPair = null;      // 匿名认证流程中生成的临时密钥对
+
+    // --- UI 更新函数 (与之前相同, 此处省略) ---
+    async function populateDidSelector() { /* ... */ }
+    function selectDidForOperation(didString) { /* ... */ }
+    // --- 粘贴之前的 UI 更新函数 populateDidSelector, selectDidForOperation 到这里 ---
+    async function populateDidSelector() {
+        try {
+            const keys = await getAllKeysFromDb();
+            didSelector.innerHTML = ''; // 清空选项
+            if (keys && keys.length > 0) {
+                keys.forEach(keyInfo => {
+                    const option = document.createElement('option');
+                    option.value = keyInfo.did;
+                    option.textContent = `${keyInfo.did} (KeyID: ${keyInfo.keyId})`;
+                    didSelector.appendChild(option);
+                });
+            } else {
+                const option = document.createElement('option');
+                option.value = "";
+                option.textContent = "-- 无可用密钥 --";
+                didSelector.appendChild(option);
+            }
+        } catch (error) {
+            console.error("填充DID选择器失败:", error);
+            messageArea.textContent = "加载已存储DID列表失败: " + error.message;
+            messageArea.classList.add('text-red-600');
+        }
+    }
+
+    function selectDidForOperation(didString) {
+        if (!didString) {
+            currentActiveDid = null;
+            currentActiveKeyId = null;
+            didUiInput.value = "";
+            keyIdUiInput.value = "";
+            messageArea.textContent = "请选择或生成一个DID。";
+            return;
+        }
+        getKeyFromDb(didString).then(keyInfo => {
+            if (keyInfo) {
+                currentActiveDid = keyInfo.did;
+                currentActiveKeyId = keyInfo.keyId;
+                didUiInput.value = keyInfo.did;
+                keyIdUiInput.value = keyInfo.keyId;
+                messageArea.textContent = `已选中DID: ${keyInfo.did}`;
+                messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+            } else {
+                messageArea.textContent = `错误：在IndexedDB中未找到DID ${didString} 的密钥信息。`;
+                messageArea.classList.add('text-red-600');
+                currentActiveDid = null;
+                currentActiveKeyId = null;
+            }
+        }).catch(error => {
+            console.error(`选择DID ${didString} 时出错:`, error);
+            messageArea.textContent = `选择DID时出错: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        });
+    }
+
+    // --- 事件监听器 ---
+
+    // 页面加载时
+    window.addEventListener('load', async () => {
+        try {
+            await openDb();
+            await populateDidSelector();
+            console.log("IndexedDB已初始化，DID选择器已填充。");
+        } catch (error) {
+            console.error("页面加载时初始化IndexedDB或填充选择器失败:", error);
+            messageArea.textContent = "初始化应用存储失败: " + error.message;
+            messageArea.classList.add('text-red-600');
+        }
+        // 默认显示认证方式选择
+        authOptionsDiv.classList.remove('hidden');
+        didAuthSection.classList.add('hidden');
+        anonymousAuthSection.classList.add('hidden');
+    });
+
+    // 显示DID登录界面按钮
+    showDidLoginButton.addEventListener('click', () => {
+        authOptionsDiv.classList.add('hidden');
+        didAuthSection.classList.remove('hidden');
+        anonymousAuthSection.classList.add('hidden');
+        messageArea.textContent = '请进行DID身份认证。';
+    });
+
+    // 显示匿名访问界面按钮
+    anonymousLoginButton.addEventListener('click', () => {
+        authOptionsDiv.classList.add('hidden');
+        didAuthSection.classList.add('hidden');
+        anonymousAuthSection.classList.remove('hidden');
+        // 重置匿名认证流程的UI
+        anonymousChallengeDisplay.classList.add('hidden');
+        anonymousVerificationDisplay.classList.add('hidden');
+        initiateAnonymousAuthButton.classList.remove('hidden');
+        messageArea.textContent = '请开始匿名访问认证流程。';
+    });
+
+    // 返回认证方式选择按钮
+    backToAuthOptionsButton.addEventListener('click', () => {
+        authOptionsDiv.classList.remove('hidden');
+        didAuthSection.classList.add('hidden');
+        anonymousAuthSection.classList.add('hidden');
+        messageArea.textContent = '';
+    });
+
+
+    // --- DID 认证流程的事件监听器 (与之前相同) ---
+    generateAndRegisterDidButton.addEventListener('click', async () => { /* ... */ });
+    selectDidButton.addEventListener('click', () => { /* ... */ });
+    deleteSelectedDidButton.addEventListener('click', async () => { /* ... */ });
+    didForm.addEventListener('submit', async function(event) { /* ... */ });
+    signChallengeClientSideButton.addEventListener('click', async () => { /* ... */ });
+    backToDidSelectionButton.addEventListener('click', () => { /* ... */ });
+    verifyButton.addEventListener('click', async function() { /* ... */ });
+    // --- 粘贴之前的 DID 认证流程事件监听器实现到这里 ---
+    generateAndRegisterDidButton.addEventListener('click', async () => {
+        messageArea.textContent = '正在生成密钥对并注册新DID...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        createdDidInfo.classList.add('hidden');
+        createdDidInfo.innerHTML = '';
+
+        try {
+            const keyPair = await generateRsaKeyPair();
+            const publicKeyBase64 = await exportPublicKeyAsBase64Spki(keyPair.publicKey);
+
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ publicKeyBase64: publicKeyBase64 })
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || result.error || `创建DID失败 (状态: ${response.status})`);
+            }
+
+            const newDidString = result.didDocument.id;
+            const newKeyId = result.didDocument.authentication && result.didDocument.authentication.length > 0
+                ? result.didDocument.authentication[0]
+                : `${newDidString}#keys-1`;
+
+            const keyInfoToStore = {
+                did: newDidString,
+                keyId: newKeyId,
+                publicKeyBase64: publicKeyBase64,
+                privateKey: keyPair.privateKey
+            };
+            await addKeyToDb(keyInfoToStore);
+            await populateDidSelector();
+            selectDidForOperation(newDidString);
+
+            messageArea.textContent = '新DID已生成、注册并存储在浏览器IndexedDB中!';
+            messageArea.classList.add('text-green-600');
+
+            createdDidInfo.innerHTML = `
+                <p><strong>新DID:</strong> <span class="code-block">${newDidString}</span></p>
+                <p><strong>对应KeyID:</strong> <span class="code-block">${newKeyId}</span></p>
+                <p class="mt-2 text-green-700 font-semibold">密钥已安全存储在浏览器的IndexedDB中。</p>`;
+            createdDidInfo.classList.remove('hidden');
+
+        } catch (error) {
+            console.error('生成和注册DID时出错:', error);
+            messageArea.textContent = `错误: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    selectDidButton.addEventListener('click', () => {
+        const selectedDidValue = didSelector.value;
+        if (selectedDidValue) {
+            selectDidForOperation(selectedDidValue);
+            step1DidInput.classList.remove('hidden');
+            messageArea.textContent = `已选择DID: ${selectedDidValue}。请获取挑战。`;
+        } else {
+            messageArea.textContent = "请从下拉列表中选择一个DID，或先生成一个。";
+            messageArea.classList.add('text-yellow-600');
+        }
+    });
+
+    deleteSelectedDidButton.addEventListener('click', async () => {
+        const didToDelete = didSelector.value;
+        if (!didToDelete) {
+            messageArea.textContent = "请先从下拉列表中选择一个要删除的DID。";
+            messageArea.classList.add('text-yellow-600');
+            return;
+        }
+        if (confirm(`确定要从浏览器IndexedDB中删除DID "${didToDelete}" 及其关联的密钥吗？此操作不可恢复。`)) {
+            try {
+                await deleteKeyFromDb(didToDelete);
+                await populateDidSelector();
+                messageArea.textContent = `DID "${didToDelete}" 已成功从浏览器存储中删除。`;
+                messageArea.className = 'mt-6 text-center text-sm text-green-600';
+                if (currentActiveDid === didToDelete) {
+                    selectDidForOperation(null);
+                }
+            } catch (error) {
+                console.error("删除DID时出错:", error);
+                messageArea.textContent = `删除DID时出错: ${error.message}`;
+                messageArea.classList.add('text-red-600');
+            }
+        }
+    });
+
+    didForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        if (!currentActiveDid) {
+            messageArea.textContent = '请先从上方选择或生成一个DID。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        messageArea.textContent = '';
+        messageArea.className = 'mt-6 text-center text-sm';
+        try {
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/auth/challenge`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ did: currentActiveDid }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.message || result.error || `获取挑战失败 (状态: ${response.status})`);
+            }
+            currentChallengeText = result.challenge;
+            keyIdUiInput.value = result.keyIdHint || currentActiveKeyId || `${currentActiveDid}#keys-1`;
+            displayDidElem.textContent = currentActiveDid;
+            challengeElem.value = currentChallengeText;
+            signatureElem.value = '';
+            step1DidInput.classList.add('hidden');
+            step2SignChallenge.classList.remove('hidden');
+            messageArea.textContent = '已获取挑战，请使用浏览器密钥签名。';
+            messageArea.classList.add('text-blue-600');
+        } catch (error) {
+            console.error('获取挑战失败:', error);
+            messageArea.textContent = `获取挑战请求失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    signChallengeClientSideButton.addEventListener('click', async () => {
+        if (!currentActiveDid || !currentChallengeText) {
+            messageArea.textContent = '错误：没有有效的DID或挑战来进行签名。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        const keyIdForSigning = keyIdUiInput.value;
+        if (!keyIdForSigning) {
+            messageArea.textContent = '错误：请输入或确认用于签名的密钥ID。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        messageArea.textContent = '正在从IndexedDB检索密钥并签名...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        try {
+            const keyInfo = await getKeyFromDb(currentActiveDid);
+            if (!keyInfo || !keyInfo.privateKey) {
+                throw new Error(`未在IndexedDB中找到与DID '${currentActiveDid}' 关联的私钥。`);
+            }
+            if (keyInfo.keyId !== keyIdForSigning) {
+                // ... (keyId不匹配的警告逻辑，此处省略)
+            }
+            const signatureArrayBuffer = await window.crypto.subtle.sign(
+                { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+                keyInfo.privateKey,
+                new TextEncoder().encode(currentChallengeText)
+            );
+            signatureElem.value = arrayBufferToBase64(signatureArrayBuffer);
+            messageArea.textContent = '挑战已签名！请点击“验证登录”。';
+            messageArea.classList.add('text-green-600');
+        } catch (error) {
+            console.error("客户端签名时出错:", error);
+            messageArea.textContent = `客户端签名失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    backToDidSelectionButton.addEventListener('click', () => {
+        step2SignChallenge.classList.add('hidden');
+        step1DidInput.classList.remove('hidden');
+        messageArea.textContent = '请从上方选择或生成一个DID。';
+        currentActiveDid = null;
+        currentActiveKeyId = null;
+        didUiInput.value = "";
+        keyIdUiInput.value = "";
+    });
+
+    verifyButton.addEventListener('click', async function() {
+        const signatureBase64 = signatureElem.value;
+        const didToVerify = displayDidElem.textContent;
+        const keyIdToVerify = keyIdUiInput.value;
+        if (!signatureBase64 || !didToVerify || !keyIdToVerify) {
+            messageArea.textContent = '验证所需信息不完整 (DID, KeyID, 或签名)。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        messageArea.textContent = '正在验证签名...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        try {
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/auth/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    did: didToVerify,
+                    challenge: currentChallengeText,
+                    signatureBase64: signatureBase64,
+                    keyId: keyIdToVerify
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.message || `验证失败 (状态: ${response.status})`);
+            }
+            if (result.success) {
+                messageArea.textContent = result.message || '登录成功！正在跳转...';
+                messageArea.classList.add('text-green-600');
+                setTimeout(() => { window.location.href = 'BlockChain.html'; }, 1500);
+            } else {
+                throw new Error(result.message || '登录验证失败，请检查您的签名或密钥ID。');
+            }
+        } catch (error) {
+            console.error('验证请求失败:', error);
+            messageArea.textContent = `验证请求失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+        }
+    });
+
+    // --- 新增：匿名认证流程的事件监听器 ---
+
+    // 1. 开始匿名认证 (获取挑战)
+    initiateAnonymousAuthButton.addEventListener('click', async () => {
+        messageArea.textContent = '正在请求匿名挑战...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        try {
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/auth/anonymous-challenge`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+                // 不需要请求体
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || result.error || `获取匿名挑战失败 (状态: ${response.status})`);
+            }
+
+            currentAnonymousChallenge = result.challenge;
+            anonymousChallengeTextElem.textContent = currentAnonymousChallenge;
+
+            initiateAnonymousAuthButton.classList.add('hidden');
+            anonymousChallengeDisplay.classList.remove('hidden');
+            anonymousVerificationDisplay.classList.add('hidden'); // 确保验证部分先隐藏
+            messageArea.textContent = '已获取匿名挑战，请继续签名。';
+            messageArea.classList.add('text-blue-600');
+
+        } catch (error) {
+            console.error('获取匿名挑战失败:', error);
+            messageArea.textContent = `获取匿名挑战请求失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+            initiateAnonymousAuthButton.classList.remove('hidden'); // 失败时显示回按钮
+        }
+    });
+
+    // 2. 生成临时密钥并签名挑战
+    signAnonymousChallengeButton.addEventListener('click', async () => {
+        if (!currentAnonymousChallenge) {
+            messageArea.textContent = '错误：没有有效的匿名挑战来进行签名。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        messageArea.textContent = '正在生成临时密钥并签名挑战...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+        try {
+            temporaryKeyPair = await generateRsaKeyPair(); // 使用现有的RSA密钥生成函数
+            const publicKeyBase64 = await exportPublicKeyAsBase64Spki(temporaryKeyPair.publicKey);
+
+            const signatureArrayBuffer = await window.crypto.subtle.sign(
+                { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, // 与 generateRsaKeyPair 中的定义一致
+                temporaryKeyPair.privateKey,
+                new TextEncoder().encode(currentAnonymousChallenge)
+            );
+            const signatureBase64 = arrayBufferToBase64(signatureArrayBuffer);
+
+            anonymousTempPublicKeyElem.value = publicKeyBase64;
+            anonymousSignatureElem.value = signatureBase64;
+
+            anonymousChallengeDisplay.classList.add('hidden');
+            anonymousVerificationDisplay.classList.remove('hidden');
+            messageArea.textContent = '临时密钥已生成，挑战已签名！请点击“验证匿名访问”。';
+            messageArea.classList.add('text-green-600');
+
+        } catch (error) {
+            console.error("匿名认证客户端签名时出错:", error);
+            messageArea.textContent = `匿名认证客户端签名失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+            anonymousChallengeDisplay.classList.remove('hidden'); // 失败时显示回挑战
+        }
+    });
+
+    // 3. 验证匿名访问
+    verifyAnonymousAuthButton.addEventListener('click', async () => {
+        const tempKey = anonymousTempPublicKeyElem.value;
+        const sig = anonymousSignatureElem.value;
+
+        if (!currentAnonymousChallenge || !tempKey || !sig) {
+            messageArea.textContent = '验证匿名访问所需信息不完整。';
+            messageArea.classList.add('text-red-600');
+            return;
+        }
+        messageArea.textContent = '正在验证匿名访问...';
+        messageArea.className = 'mt-6 text-center text-sm text-blue-600';
+
+        try {
+            const response = await fetch(`${SPRING_BOOT_API_BASE_URL}/auth/anonymous-verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    challenge: currentAnonymousChallenge,
+                    temporaryPublicKeyBase64: tempKey,
+                    signatureBase64: sig
+                }),
+            });
+            const result = await response.json();
+
+            if (!response.ok) { // 包括 401 Unauthorized, 400 Bad Request 等
+                throw new Error(result.message || `匿名验证失败 (状态: ${response.status})`);
+            }
+
+            if (result.success) {
+                messageArea.textContent = result.message || '匿名访问认证成功！正在跳转...';
+                messageArea.classList.add('text-green-600');
+                // 匿名认证成功后，可以跳转到主页或特定匿名区域
+                // 注意：BlockChain.html 可能需要检查会话中 'anonymouslyLoggedIn' 标志
+                // 来决定显示什么内容或允许什么操作。
+                setTimeout(() => { window.location.href = 'BlockChain.html'; }, 1500);
+            } else {
+                // 即使HTTP状态码是200，业务上也可能失败
+                throw new Error(result.message || '匿名访问验证失败，请重试。');
+            }
+        } catch (error) {
+            console.error('匿名验证请求失败:', error);
+            messageArea.textContent = `匿名验证请求失败: ${error.message}`;
+            messageArea.classList.add('text-red-600');
+            // 失败时可以考虑重置UI到某个阶段
+            anonymousVerificationDisplay.classList.add('hidden');
+            initiateAnonymousAuthButton.classList.remove('hidden');
+        }
+    });
+
+</script>
+</body>
+</html>

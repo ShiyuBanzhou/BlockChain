@@ -6,6 +6,7 @@ import com.bjut.blockchain.did.model.DidDocument;
 import com.bjut.blockchain.did.model.DidDocument.VerificationMethod;
 import com.bjut.blockchain.did.service.DidAuthenticationService;
 import com.bjut.blockchain.did.service.DidService;
+import com.bjut.blockchain.web.util.CryptoUtil; // 引入 CryptoUtil
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -38,12 +39,7 @@ public class DidController {
         this.objectMapper = objectMapper;
     }
 
-    // --- DTOs (确保它们在 com.bjut.blockchain.did.dto 包中) ---
-    // ChallengeRequest, VerificationRequest, CreateDidRequest
-    // DidPublicKeyInfo, DidDocumentUpdateRequest, DidKeyRemovalRequest
-
-    // --- 身份认证端点 (登录挑战、验证签名、登出) ---
-    // ... (这些端点与上一版本相同，为简洁省略) ...
+    // --- DID 身份认证端点 ---
     @PostMapping("/auth/challenge")
     public ResponseEntity<Map<String, String>> requestLoginChallenge(@RequestBody ChallengeRequest challengeRequest, HttpServletRequest httpRequest) {
         String did = challengeRequest.getDid();
@@ -110,17 +106,122 @@ public class DidController {
         }
     }
 
+    // --- 新增：匿名认证端点 ---
+    @PostMapping("/auth/anonymous-challenge")
+    public ResponseEntity<Map<String, String>> requestAnonymousLoginChallenge(HttpServletRequest httpRequest) {
+        String challenge = UUID.randomUUID().toString();
+        HttpSession session = httpRequest.getSession(true);
+        session.setAttribute("anonymous_auth_challenge", challenge);
+        session.setMaxInactiveInterval(5 * 60);
+
+        Map<String, String> response = new HashMap<>();
+        response.put("challenge", challenge);
+        logger.info("已为会话 {} 生成匿名认证挑战: '{}'", session.getId(), challenge);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/auth/anonymous-verify")
+    public ResponseEntity<Map<String, Object>> verifyAnonymousLoginSignature(
+            @RequestBody AnonymousVerificationRequest verificationRequest,
+            HttpServletRequest httpRequest) {
+        Map<String, Object> response = new HashMap<>();
+        String clientChallenge = verificationRequest.getChallenge();
+        String tempPublicKeyBase64 = verificationRequest.getTemporaryPublicKeyBase64();
+        String signatureBase64 = verificationRequest.getSignatureBase64();
+
+        if (clientChallenge == null || tempPublicKeyBase64 == null || signatureBase64 == null ||
+                clientChallenge.isEmpty() || tempPublicKeyBase64.isEmpty() || signatureBase64.isEmpty()) {
+            response.put("success", false); response.put("message", "请求参数不完整：缺少 challenge, temporaryPublicKeyBase64 或 signatureBase64。");
+            return ResponseEntity.badRequest().body(response);
+        }
+
+        HttpSession session = httpRequest.getSession(false);
+        if (session == null) {
+            response.put("success", false); response.put("message", "匿名挑战的会话不存在或已过期。请重新请求挑战。");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+
+        String serverChallenge = (String) session.getAttribute("anonymous_auth_challenge");
+        session.removeAttribute("anonymous_auth_challenge");
+
+        if (serverChallenge == null || !serverChallenge.equals(clientChallenge)) {
+            response.put("success", false); response.put("message", "匿名认证的挑战码无效、不匹配或已过期。请重新请求挑战。");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+
+        boolean isAuthenticated = didAuthenticationService.verifyAnonymousSignature(
+                serverChallenge, tempPublicKeyBase64, signatureBase64);
+
+        if (isAuthenticated) {
+            session.setAttribute("anonymouslyLoggedIn", true);
+            session.setAttribute("anonymousTempKeyHash", CryptoUtil.SHA256(tempPublicKeyBase64));
+            session.setMaxInactiveInterval(15 * 60);
+            response.put("success", true); response.put("message", "匿名认证成功。");
+            logger.info("会话 {} 已通过匿名认证。临时公钥哈希: {}", session.getId(), CryptoUtil.SHA256(tempPublicKeyBase64));
+            return ResponseEntity.ok(response);
+        } else {
+            response.put("success", false); response.put("message", "匿名认证失败：签名验证错误。");
+            logger.warn("会话 {} 的匿名认证失败。挑战: {}, 临时公钥 (前缀): {}", session.getId(), serverChallenge, tempPublicKeyBase64.substring(0, Math.min(20, tempPublicKeyBase64.length())));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
+    }
+
+    // --- 新增：会话状态端点 ---
+    /**
+     * 获取当前会话的认证状态。
+     * GET /api/did/auth/session-status
+     * @param request HttpServletRequest 用于获取会话。
+     * @return 包含认证状态信息的响应。
+     */
+    @GetMapping("/auth/session-status")
+    public ResponseEntity<Map<String, Object>> getSessionStatus(HttpServletRequest request) {
+        Map<String, Object> statusResponse = new HashMap<>();
+        HttpSession session = request.getSession(false); // 不创建新会话
+
+        if (session != null) {
+            Object didUser = session.getAttribute("loggedInUserDid");
+            Object anonymousUser = session.getAttribute("anonymouslyLoggedIn");
+            Object anonymousKeyHash = session.getAttribute("anonymousTempKeyHash");
+
+            if (didUser != null) {
+                statusResponse.put("isAuthenticated", true);
+                statusResponse.put("authType", "DID");
+                statusResponse.put("identifier", didUser.toString());
+                logger.debug("会话 {} 状态：DID已认证，用户: {}", session.getId(), didUser);
+            } else if (anonymousUser != null && (Boolean)anonymousUser) {
+                statusResponse.put("isAuthenticated", true);
+                statusResponse.put("authType", "ANONYMOUS");
+                statusResponse.put("identifier", anonymousKeyHash != null ? "Anonymous (TempKeyHash: " + anonymousKeyHash.toString().substring(0,10) + "...)" : "Anonymous User");
+                logger.debug("会话 {} 状态：匿名已认证。哈希: {}", session.getId(), anonymousKeyHash);
+            } else {
+                statusResponse.put("isAuthenticated", false);
+                logger.debug("会话 {} 状态：未认证 (会话存在但无认证标记)。", session.getId());
+            }
+        } else {
+            statusResponse.put("isAuthenticated", false);
+            logger.debug("会话状态：未认证 (无会话)。");
+        }
+        return ResponseEntity.ok(statusResponse);
+    }
+
+
     @PostMapping("/logout")
     public ResponseEntity<Map<String, Object>> logout(HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
         try {
             HttpSession session = request.getSession(false);
             if (session != null) {
+                String userId = session.getAttribute("loggedInUserDid") != null ?
+                        session.getAttribute("loggedInUserDid").toString() :
+                        (session.getAttribute("anonymouslyLoggedIn") != null && (Boolean)session.getAttribute("anonymouslyLoggedIn") ?
+                                "Anonymous User (Hash: " + session.getAttribute("anonymousTempKeyHash") + ")" : "Unknown User");
+                logger.info("用户 {} 正在从会话 {} 登出。", userId, session.getId());
                 session.invalidate();
             }
             response.put("success", true); response.put("message", "成功登出！");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            logger.error("登出过程中发生错误: {}", e.getMessage(), e);
             response.put("success", false); response.put("message", "登出过程中发生错误。");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
@@ -168,12 +269,6 @@ public class DidController {
     }
 
     // --- DID文档更新端点 ---
-
-    /**
-     * 阶段1：为【添加密钥】到DID文档操作请求一个挑战。
-     * POST /api/did/update/add-key/challenge
-     * 请求体: Map 包含 "did" (要更新的DID), "authorizingKeyId" (用于授权的现有密钥ID)
-     */
     @PostMapping("/update/add-key/challenge")
     public ResponseEntity<Map<String, String>> requestAddKeyChallenge(@RequestBody Map<String, String> payload, HttpServletRequest httpRequest) {
         String didToUpdate = payload.get("did");
@@ -200,9 +295,9 @@ public class DidController {
 
         String challenge = UUID.randomUUID().toString();
         HttpSession session = httpRequest.getSession(true);
-        // 为添加密钥操作使用特定的会话挑战键
         String sessionChallengeKey = "add_key_challenge_" + didToUpdate + "_" + authorizingKeyId.replaceAll("[^a-zA-Z0-9_-]", "_");
         session.setAttribute(sessionChallengeKey, challenge);
+        session.setMaxInactiveInterval(5*60);
 
         Map<String, String> response = new HashMap<>();
         response.put("did", didToUpdate);
@@ -213,11 +308,6 @@ public class DidController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * 阶段2：执行DID文档更新 - 添加新的验证方法。
-     * POST /api/did/update/add-key/execute
-     * 请求体: {@link com.bjut.blockchain.did.dto.DidDocumentUpdateRequest}
-     */
     @PostMapping("/update/add-key/execute")
     @Transactional
     public ResponseEntity<Map<String, Object>> executeAddKey(@RequestBody DidDocumentUpdateRequest updateRequest, HttpServletRequest httpRequest) {
@@ -259,6 +349,7 @@ public class DidController {
         try {
             canonicalPayloadToVerify = objectMapper.writeValueAsString(dataToSignMap);
         } catch (JsonProcessingException e) {
+            logger.error("为添加密钥操作准备规范化签名负载时JSON序列化失败: {}", e.getMessage(), e);
             response.put("success", false); response.put("message", "内部服务器错误：无法准备验证数据。");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
@@ -288,19 +379,15 @@ public class DidController {
                 return ResponseEntity.ok(response);
             } else {
                 response.put("success", false); response.put("message", "DID文档更新失败（可能是DID不存在或KeyID冲突）。");
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
             }
         } catch (Exception e) {
+            logger.error("执行添加密钥到DID '{}' 时，服务层发生错误: {}", updateRequest.getDid(), e.getMessage(), e);
             response.put("success", false); response.put("message", "DID文档更新时发生内部错误：" + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
 
-    /**
-     * 阶段1：为【移除密钥】从DID文档操作请求一个挑战。
-     * POST /api/did/update/remove-key/challenge
-     * 请求体: Map 包含 "did", "authorizingKeyId", "keyIdToRemove"
-     */
     @PostMapping("/update/remove-key/challenge")
     public ResponseEntity<Map<String, String>> requestRemoveKeyChallenge(@RequestBody Map<String, String> payload, HttpServletRequest httpRequest) {
         String didToUpdate = payload.get("did");
@@ -323,22 +410,22 @@ public class DidController {
         boolean keyToRemoveExists = currentDoc.getVerificationMethod().stream().anyMatch(vm -> keyIdToRemove.equals(vm.getId()));
 
         if (!authKeyExists) {
-            return ResponseEntity.badRequest().body(Collections.singletonMap("error", "提供的授权密钥ID '" + authorizingKeyId + "' 无效。"));
+            return ResponseEntity.badRequest().body(Collections.singletonMap("error", "提供的授权密钥ID '" + authorizingKeyId + "' 无效或不属于该DID。"));
         }
         if (!keyToRemoveExists) {
             return ResponseEntity.badRequest().body(Collections.singletonMap("error", "要移除的密钥ID '" + keyIdToRemove + "' 在该DID文档中未找到。"));
         }
 
         if (authorizingKeyId.equals(keyIdToRemove)) {
-            // 检查如果移除后是否还有其他认证方法
-            long authMethodsCount = currentDoc.getAuthentication() != null ? currentDoc.getAuthentication().size() : 0;
-            boolean isLastAuthKey = currentDoc.getAuthentication() != null &&
+            long authMethodsCount = currentDoc.getAuthentication() != null ?
+                    currentDoc.getAuthentication().stream().filter(authId -> currentDoc.getVerificationMethod().stream().anyMatch(vm -> authId.equals(vm.getId()))).count()
+                    : 0;
+            boolean isEffectivelyLastAuthKey = currentDoc.getAuthentication() != null &&
                     currentDoc.getAuthentication().contains(keyIdToRemove) &&
-                    authMethodsCount == 1;
-            if (isLastAuthKey) {
-                logger.warn("警告：用户尝试使用密钥 '{}' 授权移除其自身，并且这是DID '{}' 的最后一个认证方法。此操作可能导致DID失控。", authorizingKeyId, didToUpdate);
-                // 根据策略，可以阻止此操作或允许但发出更强烈的警告
-                // return ResponseEntity.badRequest().body(Collections.singletonMap("error", "不能移除最后一个认证密钥，除非有恢复机制。"));
+                    authMethodsCount <= 1;
+
+            if (isEffectivelyLastAuthKey) {
+                logger.warn("警告：用户尝试使用密钥 '{}' 授权移除其自身，并且这可能是DID '{}' 的最后一个有效认证方法。此操作可能导致DID失控。", authorizingKeyId, didToUpdate);
             }
         }
 
@@ -348,6 +435,7 @@ public class DidController {
                 authorizingKeyId.replaceAll("[^a-zA-Z0-9_-]", "_") + "_" +
                 keyIdToRemove.replaceAll("[^a-zA-Z0-9_-]", "_");
         session.setAttribute(sessionChallengeKey, challenge);
+        session.setMaxInactiveInterval(5*60);
 
         Map<String, String> response = new HashMap<>();
         response.put("did", didToUpdate);
@@ -359,16 +447,10 @@ public class DidController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * 阶段2：执行DID文档更新 - 移除验证方法。
-     * POST /api/did/update/remove-key/execute
-     * 请求体: {@link com.bjut.blockchain.did.dto.DidKeyRemovalRequest}
-     */
     @PostMapping("/update/remove-key/execute")
     @Transactional
     public ResponseEntity<Map<String, Object>> executeRemoveKey(@RequestBody DidKeyRemovalRequest removalRequest, HttpServletRequest httpRequest) {
         Map<String, Object> response = new HashMap<>();
-
         if (removalRequest == null || removalRequest.getDid() == null || removalRequest.getKeyIdToRemove() == null ||
                 removalRequest.getAuthorizingKeyId() == null || removalRequest.getChallenge() == null || removalRequest.getSignatureBase64() == null) {
             response.put("success", false); response.put("message", "请求体不完整。");
@@ -402,6 +484,7 @@ public class DidController {
         try {
             canonicalPayloadToVerify = objectMapper.writeValueAsString(dataToSignMap);
         } catch (JsonProcessingException e) {
+            logger.error("为移除密钥操作准备规范化签名负载时JSON序列化失败: {}", e.getMessage(), e);
             response.put("success", false); response.put("message", "内部服务器错误：无法准备验证数据。");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
@@ -424,6 +507,7 @@ public class DidController {
             if (updatedDocument != null) {
                 boolean actuallyRemoved = updatedDocument.getVerificationMethod().stream()
                         .noneMatch(vm -> removalRequest.getKeyIdToRemove().equals(vm.getId()));
+
                 if (actuallyRemoved) {
                     response.put("success", true);
                     response.put("message", "密钥 '" + removalRequest.getKeyIdToRemove() + "' 已成功从DID文档中移除。");
@@ -431,8 +515,8 @@ public class DidController {
                     return ResponseEntity.ok(response);
                 } else {
                     response.put("success", false);
-                    response.put("message", "从DID文档移除密钥失败（服务层报告未找到要移除的密钥，或由于业务规则未移除）。");
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response); // 或 400 Bad Request
+                    response.put("message", "从DID文档移除密钥失败：要移除的密钥ID '" + removalRequest.getKeyIdToRemove() + "' 可能未在文档中找到。");
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
                 }
             } else {
                 response.put("success", false);
@@ -440,7 +524,7 @@ public class DidController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
         } catch (Exception e) {
-            logger.error("执行移除密钥时，DidService操作失败。DID: {}", removalRequest.getDid(), e);
+            logger.error("执行移除密钥从DID '{}' 时，服务层发生错误: {}", removalRequest.getDid(), e.getMessage(), e);
             response.put("success", false);
             response.put("message", "移除密钥时发生内部错误：" + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);

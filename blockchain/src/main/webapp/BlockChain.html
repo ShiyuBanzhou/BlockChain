@@ -5,9 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>区块链操作页面</title>
-    <!-- TailwindCSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 全局样式 -->
     <style>
         body {
             font-family: 'Inter', sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -50,6 +48,11 @@
         .btn-primary:hover {
             background-color: #4338ca;
         }
+        .btn-primary:disabled { /* 新增：禁用按钮样式 */
+            background-color: #a5b4fc; /* 更浅的靛蓝色 */
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
         .btn-secondary {
             background-color: #6b7280;
             color: white;
@@ -63,6 +66,11 @@
         }
         .btn-success:hover {
             background-color: #059669;
+        }
+        .btn-success:disabled { /* 新增：禁用按钮样式 */
+            background-color: #6ee7b7; /* 更浅的绿色 */
+            cursor: not-allowed;
+            opacity: 0.7;
         }
         .btn-danger {
             background-color: #ef4444;
@@ -194,12 +202,38 @@
             margin: 1rem 0;
             border-color: #e5e7eb;
         }
+        /* 新增：用户状态显示区域 */
+        #userAuthStatus {
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.5rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+        }
+        #userAuthStatus.status-did {
+            background-color: #e0e7ff; /* Light Indigo */
+            color: #3730a3; /* Dark Indigo */
+            border: 1px solid #c7d2fe;
+        }
+        #userAuthStatus.status-anonymous {
+            background-color: #d1fae5; /* Light Green */
+            color: #047857; /* Dark Green */
+            border: 1px solid #a7f3d0;
+        }
+        #userAuthStatus.status-none {
+            background-color: #fee2e2; /* Light Red */
+            color: #991b1b; /* Dark Red */
+            border: 1px solid #fecaca;
+        }
     </style>
 </head>
 
 <body class="antialiased">
 <div class="container">
-    <h1 class="text-3xl font-bold text-gray-900 mb-6">区块链交互操作界面</h1>
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">区块链交互操作界面</h1>
+        <button id="logoutButton" class="btn btn-danger">登出</button>
+    </div>
+    <div id="userAuthStatus" class="status-none">正在检查认证状态...</div>
     <div id="generalMessageArea" class="message-area hidden"></div>
 
     <div class="button-group">
@@ -223,17 +257,14 @@
         </div>
     </div>
 
-    <!-- DID 密钥管理模态框 -->
     <div id="didKeyManagementModal" class="modal">
         <div class="modal-content">
             <span class="close-button" id="closeDidKeyManagementModalBtn">&times;</span>
             <h3>管理DID密钥</h3>
-
             <div class="button-group mb-4">
                 <button id="tabAddKey" class="tab-button active">添加新密钥</button>
                 <button id="tabRemoveKey" class="tab-button inactive">移除现有密钥</button>
             </div>
-
             <div id="addKeyContent" class="tab-content">
                 <h4>添加新验证方法 (公钥)</h4>
                 <form id="didAddKeyForm" class="space-y-4">
@@ -270,7 +301,6 @@
                 </form>
                 <div id="didAddKeyMessageArea" class="message-area hidden"></div>
             </div>
-
             <div id="removeKeyContent" class="tab-content hidden">
                 <h4>移除现有验证方法 (公钥)</h4>
                 <form id="didRemoveKeyForm" class="space-y-4">
@@ -296,18 +326,43 @@
 
 <script>
     // --- 全局常量和状态 ---
-    const API_BASE_URL = 'http://localhost:8080/api';
+    const API_BASE_URL = 'http://localhost:8080/api'; // 确保端口是8090
     let currentChallengeForAddKey = '';
     let currentChallengeForRemoveKey = '';
     let payloadToSignForAddKey = {};
     let payloadToSignForRemoveKey = {};
 
-    // --- IndexedDB 配置与辅助函数 ---
+    // 新增：用于存储当前用户认证状态
+    let currentUserAuth = {
+        isAuthenticated: false,
+        authType: null, // 'DID' 或 'ANONYMOUS'
+        identifier: null
+    };
+
+    // --- DOM 元素获取 ---
+    const userAuthStatusDiv = document.getElementById('userAuthStatus');
+    const logoutButton = document.getElementById('logoutButton');
+    const getCertificateBtn = document.getElementById('getCertificateBtn');
+    const openDidUpdateModalBtn = document.getElementById('openDidUpdateModalBtn');
+    // 其他按钮和元素获取... (保持您已有的)
+    const createBlockchainBtn = document.getElementById('createBlockchainBtn');
+    const mineBtn = document.getElementById('mineBtn');
+    const showNowBlockchain = document.getElementById('showNowBlockchain');
+    const showPackedTransactionsBtn = document.getElementById('showPackedTransactionsBtn');
+    const listDidsBtn = document.getElementById('listDidsBtn');
+
+
+    // --- IndexedDB 配置与辅助函数 (保持不变) ---
     const DB_NAME_KEYS = "UserDIDKeyStore_BlockChainPage";
     const DB_VERSION_KEYS = 1;
     const KEY_STORE_NAME_KEYS = "localUserKeys";
     let idbKeys;
-
+    async function openLocalKeysDb() { /* ... */ }
+    async function addLocalKeyToDbBlockChain(keyInfo) { /* ... */ }
+    async function getLocalKeyFromDbBlockChain(didAndKeyId) { /* ... */ }
+    async function getAllLocalKeysFromDbBlockChain() { /* ... */ }
+    async function deleteLocalKeyFromDbBlockChain(didAndKeyId) { /* ... */ }
+    // --- 粘贴 IndexedDB 辅助函数实现 ---
     function openLocalKeysDb() {
         return new Promise((resolve, reject) => {
             if (idbKeys) { resolve(idbKeys); return; }
@@ -324,7 +379,6 @@
             };
         });
     }
-
     async function addLocalKeyToDbBlockChain(keyInfo) {
         const currentDb = await openLocalKeysDb();
         return new Promise((resolve, reject) => {
@@ -335,7 +389,6 @@
             request.onerror = (event) => reject("添加密钥到本地DB失败: " + event.target.error);
         });
     }
-
     async function getLocalKeyFromDbBlockChain(didAndKeyId) {
         const currentDb = await openLocalKeysDb();
         return new Promise((resolve, reject) => {
@@ -346,7 +399,6 @@
             request.onerror = (event) => reject("从本地DB获取密钥失败: " + event.target.error);
         });
     }
-
     async function getAllLocalKeysFromDbBlockChain() {
         const currentDb = await openLocalKeysDb();
         return new Promise((resolve, reject) => {
@@ -357,7 +409,6 @@
             request.onerror = (event) => reject("从本地DB获取所有密钥失败: " + event.target.error);
         });
     }
-
     async function deleteLocalKeyFromDbBlockChain(didAndKeyId) {
         const currentDb = await openLocalKeysDb();
         return new Promise((resolve, reject) => {
@@ -369,7 +420,12 @@
         });
     }
 
-    // --- Web Crypto API 辅助函数 ---
+    // --- Web Crypto API 辅助函数 (保持不变) ---
+    function arrayBufferToBase64(buffer) { /* ... */ }
+    async function generateRsaKeyPairClientSide() { /* ... */ }
+    async function exportPublicKeyForServer(publicKey) { /* ... */ }
+    async function clientSignData(privateKey, dataString) { /* ... */ }
+    // --- 粘贴 Web Crypto API 辅助函数实现 ---
     function arrayBufferToBase64(buffer) {
         let binary = '';
         const bytes = new Uint8Array(buffer);
@@ -401,7 +457,12 @@
         } catch (error) { console.error("clientSignData: 签名时发生错误:", error); throw error; }
     }
 
-    // --- 通用消息显示和错误处理 ---
+
+    // --- 通用消息显示和错误处理 (保持不变) ---
+    function showMessage(areaId, message, type = 'info', autohide = true) { /* ... */ }
+    function displayJsonInBox(boxId, data, successMessagePrefix = '') { /* ... */ }
+    async function handleApiError(boxId, error, errorMessagePrefix = '') { /* ... */ }
+    // --- 粘贴通用消息和错误处理函数实现 ---
     function showMessage(areaId, message, type = 'info', autohide = true) {
         const area = document.getElementById(areaId);
         if (!area) {
@@ -424,7 +485,6 @@
             } , 5000);
         }
     }
-
     function displayJsonInBox(boxId, data, successMessagePrefix = '') {
         const box = document.getElementById(boxId);
         if (!box) {
@@ -450,7 +510,6 @@
         }
         box.innerText = contentToDisplay;
     }
-
     async function handleApiError(boxId, error, errorMessagePrefix = '') {
         console.error(errorMessagePrefix, error);
         const box = document.getElementById(boxId);
@@ -488,36 +547,96 @@
                 detailedErrorMessage = error;
             }
         }
-
         const fullMessage = errorMessagePrefix + detailedErrorMessage;
         box.innerText = fullMessage;
         showMessage('generalMessageArea', `操作失败: ${detailedErrorMessage.substring(0,100)}...`, 'error', false);
+    }
+
+
+    // --- 新增：获取和更新用户认证状态 ---
+    async function fetchAndUpdateUserAuthStatus() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/did/auth/session-status`); // 调用新后端端点
+            if (!response.ok) {
+                throw new Error(`获取会话状态失败: ${response.status}`);
+            }
+            const status = await response.json();
+            currentUserAuth = status; // 更新全局状态
+
+            if (status.isAuthenticated) {
+                userAuthStatusDiv.textContent = `已认证: ${status.identifier} (类型: ${status.authType})`;
+                if (status.authType === 'DID') {
+                    userAuthStatusDiv.className = 'status-did';
+                    getCertificateBtn.disabled = false;
+                    openDidUpdateModalBtn.disabled = false;
+                } else if (status.authType === 'ANONYMOUS') {
+                    userAuthStatusDiv.className = 'status-anonymous';
+                    // 匿名用户不能创建DID或管理密钥
+                    getCertificateBtn.disabled = true;
+                    openDidUpdateModalBtn.disabled = true;
+                    getCertificateBtn.title = "匿名用户不能创建新DID";
+                    openDidUpdateModalBtn.title = "匿名用户不能管理DID密钥";
+                }
+            } else {
+                userAuthStatusDiv.textContent = '未认证。某些操作可能受限。';
+                userAuthStatusDiv.className = 'status-none';
+                // 未认证时，也禁用DID特定操作
+                getCertificateBtn.disabled = true;
+                openDidUpdateModalBtn.disabled = true;
+                getCertificateBtn.title = "请先登录以创建新DID";
+                openDidUpdateModalBtn.title = "请先登录以管理DID密钥";
+                // 可以考虑重定向到登录页，如果此页面严格要求登录
+                // window.location.href = 'login.html';
+            }
+        } catch (error) {
+            console.error("获取用户认证状态失败:", error);
+            userAuthStatusDiv.textContent = '获取认证状态失败。请尝试刷新。';
+            userAuthStatusDiv.className = 'status-none';
+            getCertificateBtn.disabled = true;
+            openDidUpdateModalBtn.disabled = true;
+        }
     }
 
     // --- 初始化 ---
     document.addEventListener('DOMContentLoaded', async () => {
         try {
             await openLocalKeysDb();
-            await populateDidSelectorsInModal();
+            await populateDidSelectorsInModal(); // 填充模态框中的DID选择器
             console.log("BlockChain.html: IndexedDB (localKeys) 已准备好。");
         } catch (error) {
             console.error("页面加载时初始化本地密钥DB失败:", error);
             showMessage('generalMessageArea', "无法初始化本地密钥存储: " + error.message, 'error');
         }
+        await fetchAndUpdateUserAuthStatus(); // 获取并更新认证状态
         setupButtonEventListeners();
     });
 
     function setupButtonEventListeners() {
-        document.getElementById('getCertificateBtn').addEventListener('click', handleCreateNewDid);
-        document.getElementById('createBlockchainBtn').addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/genesis`, { method: 'POST'}, 'displayBox2', '创世块创建结果: \n', '创世块创建失败: '));
-        document.getElementById('mineBtn').addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/mine`, { method: 'POST'}, 'displayBox2', '挖矿成功，新区块: \n', '挖矿失败: '));
-        document.getElementById('showNowBlockchain').addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/chain`, {}, 'displayBox2', '当前节点区块链: \n', '显示当前节点区块链失败: '));
-        document.getElementById('showPackedTransactionsBtn').addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/transactions/packed`, {}, 'displayBox2', '已打包交易: \n', '显示已打包交易数据失败: '));
-        document.getElementById('listDidsBtn').addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/did/list`, {}, 'displayBox1', '所有已注册 DIDs (从后端): \n', '列出 DID 失败: '));
-        document.getElementById('openDidUpdateModalBtn').addEventListener('click', async () => {
+        // 现有按钮事件 (保持不变)
+        getCertificateBtn.addEventListener('click', handleCreateNewDid);
+        createBlockchainBtn.addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/genesis`, { method: 'POST'}, 'displayBox2', '创世块创建结果: \n', '创世块创建失败: '));
+        mineBtn.addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/mine`, { method: 'POST'}, 'displayBox2', '挖矿成功，新区块: \n', '挖矿失败: '));
+        showNowBlockchain.addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/chain`, {}, 'displayBox2', '当前节点区块链: \n', '显示当前节点区块链失败: '));
+        showPackedTransactionsBtn.addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/blocks/transactions/packed`, {}, 'displayBox2', '已打包交易: \n', '显示已打包交易数据失败: '));
+        listDidsBtn.addEventListener('click', () => genericFetchCall(`${API_BASE_URL}/did/list`, {}, 'displayBox1', '所有已注册 DIDs (从后端): \n', '列出 DID 失败: '));
+
+        // DID 密钥管理模态框相关 (保持不变)
+        const didKeyManagementModal = document.getElementById('didKeyManagementModal');
+        const openDidUpdateModalBtn = document.getElementById('openDidUpdateModalBtn'); // 已在上面获取
+        const closeDidKeyManagementModalBtn = document.getElementById('closeDidKeyManagementModalBtn');
+        const tabAddKey = document.getElementById('tabAddKey');
+        const tabRemoveKey = document.getElementById('tabRemoveKey');
+        const addKeyContent = document.getElementById('addKeyContent');
+        const removeKeyContent = document.getElementById('removeKeyContent');
+
+        openDidUpdateModalBtn.addEventListener('click', async () => {
+            if (currentUserAuth.authType !== 'DID') {
+                showMessage('generalMessageArea', '只有通过DID认证的用户才能管理密钥。', 'error');
+                return;
+            }
             await populateDidSelectorsInModal();
             didKeyManagementModal.style.display = "block";
-            showMessage('didAddKeyMessageArea', '', 'info', false);
+            showMessage('didAddKeyMessageArea', '', 'info', false); // 清空旧消息
             showMessage('didRemoveKeyMessageArea', '', 'info', false);
             document.getElementById('didAddKeyMessageArea').classList.add('hidden');
             document.getElementById('didRemoveKeyMessageArea').classList.add('hidden');
@@ -528,7 +647,9 @@
         });
         closeDidKeyManagementModalBtn.onclick = () => { didKeyManagementModal.style.display = "none"; };
         window.onclick = event => { if (event.target == didKeyManagementModal) { didKeyManagementModal.style.display = "none"; } };
-
+        tabAddKey.addEventListener('click', () => { /* ... */ }); // 保持不变
+        tabRemoveKey.addEventListener('click', () => { /* ... */ }); // 保持不变
+        // --- 粘贴模态框tab切换逻辑 ---
         tabAddKey.addEventListener('click', () => {
             addKeyContent.classList.remove('hidden'); removeKeyContent.classList.add('hidden');
             tabAddKey.classList.add('active'); tabAddKey.classList.remove('inactive');
@@ -539,13 +660,63 @@
             tabRemoveKey.classList.add('active'); tabRemoveKey.classList.remove('inactive');
             tabAddKey.classList.add('inactive'); tabAddKey.classList.remove('active');
         });
+
+
+        // 新增：登出按钮事件
+        logoutButton.addEventListener('click', async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/did/logout`, { method: 'POST' });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    showMessage('generalMessageArea', '已成功登出！正在跳转到登录页面...', 'success');
+                    currentUserAuth = { isAuthenticated: false, authType: null, identifier: null }; // 清除本地状态
+                    updateUserAuthDisplay(); // 更新显示
+                    setTimeout(() => { window.location.href = 'login.html'; }, 1500);
+                } else {
+                    throw new Error(result.message || '登出失败');
+                }
+            } catch (error) {
+                console.error("登出失败:", error);
+                showMessage('generalMessageArea', `登出失败: ${error.message}`, 'error');
+            }
+        });
+    }
+    // 新增：用于在登出后更新UI的辅助函数
+    function updateUserAuthDisplay() {
+        if (currentUserAuth.isAuthenticated) {
+            userAuthStatusDiv.textContent = `已认证: ${currentUserAuth.identifier} (类型: ${currentUserAuth.authType})`;
+            userAuthStatusDiv.className = currentUserAuth.authType === 'DID' ? 'status-did' : 'status-anonymous';
+        } else {
+            userAuthStatusDiv.textContent = '未认证。';
+            userAuthStatusDiv.className = 'status-none';
+        }
+        getCertificateBtn.disabled = currentUserAuth.authType !== 'DID';
+        openDidUpdateModalBtn.disabled = currentUserAuth.authType !== 'DID';
+        getCertificateBtn.title = currentUserAuth.authType !== 'DID' ? "只有DID用户才能创建新DID" : "在客户端生成新密钥对并注册新DID";
+        openDidUpdateModalBtn.title = currentUserAuth.authType !== 'DID' ? "只有DID用户才能管理密钥" : "管理DID密钥";
     }
 
+
     async function genericFetchCall(url, options = {}, displayBoxId, successPrefix, errorPrefix) {
+        // 新增：在发起API调用前检查认证状态
+        if (!currentUserAuth.isAuthenticated) {
+            const msg = "操作失败：用户未认证。请先登录。";
+            showMessage('generalMessageArea', msg, 'error', false);
+            if (displayBoxId) {
+                const box = document.getElementById(displayBoxId);
+                if (box) box.innerText = msg;
+            }
+            // 可以考虑跳转到登录页
+            // window.location.href = 'login.html';
+            return; // 阻止未认证的API调用
+        }
+
         showMessage('generalMessageArea', `正在请求 ${url}...`, 'info', false);
         console.log(`genericFetchCall: 发起请求到 ${url}，选项:`, options, `目标显示框: ${displayBoxId}`);
         try {
-            const defaultOptions = { credentials: 'include' };
+            const defaultOptions = { credentials: 'omit' }; // 确保凭证按需发送，对于session cookie, 'include'是必要的
+                                                            // 但如果后端CORS配置为 allowCredentials(true) 且前端源被允许，浏览器会自动发送cookie
+                                                            // 如果遇到cookie问题，可以尝试 'include'
             const fetchOptions = { ...defaultOptions, ...options };
             if (options.body && typeof options.body !== 'string') {
                 fetchOptions.body = JSON.stringify(options.body);
@@ -565,37 +736,44 @@
                 try { errorData = JSON.parse(responseText); } catch (e) { errorData = responseText; }
                 console.error(`${errorPrefix} HTTP ${response.status} for ${url}`, errorData);
                 const err = new Error( (typeof errorData === 'string' ? errorData : (errorData.message || errorData.error || JSON.stringify(errorData))) || `HTTP error! status: ${response.status}`);
-                err.response = response;
+                err.response = response; // 将原始响应附加到错误对象
                 throw err;
             }
 
             let data;
-            try { data = JSON.parse(responseText); } catch (e) { data = responseText; }
+            try { data = JSON.parse(responseText); } catch (e) { data = responseText; } // 如果不是JSON，则按文本处理
             console.log(`genericFetchCall: 解析后的数据 for ${url}`, data);
 
             showMessage('generalMessageArea', `${successPrefix} 请求成功!`, 'success', true);
             displayJsonInBox(displayBoxId, data, successPrefix);
-            return data;
+            return data; // 返回解析后的数据
         } catch (error) {
             console.error(`genericFetchCall: 捕获到错误 for ${url}`, error);
             showMessage('generalMessageArea', `${errorPrefix} ${error.message || '未知错误'}`, 'error', false);
             handleApiError(displayBoxId, error, errorPrefix);
-            throw error;
+            throw error; // 重新抛出错误，以便调用者可以进一步处理
         }
     }
 
-    // --- 创建新DID ---
+    // --- 创建新DID (handleCreateNewDid) ---
     async function handleCreateNewDid() {
+        // 新增：检查是否为DID认证用户
+        if (currentUserAuth.authType !== 'DID') {
+            showMessage('generalMessageArea', '只有通过DID认证的用户才能创建新的DID。匿名用户无法执行此操作。', 'error', false);
+            displayJsonInBox('displayBox1', '操作被阻止：匿名用户不能创建新DID。', '错误: ');
+            return;
+        }
+        // 原有逻辑...
         const currentDisplayBoxId = 'displayBox1';
         showMessage('generalMessageArea', '正在客户端生成密钥对并向服务器注册新DID...', 'info', false);
         try {
             const keyPair = await generateRsaKeyPairClientSide();
             const publicKeyBase64 = await exportPublicKeyForServer(keyPair.publicKey);
 
-            const response = await fetch(`${API_BASE_URL}/did/create`, {
+            const response = await fetch(`${API_BASE_URL}/did/create`, { // 注意：API_BASE_URL 已包含 /api
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
+                // credentials: 'omit', // 根据需要调整凭证策略
                 body: JSON.stringify({ publicKeyBase64: publicKeyBase64 })
             });
             console.log("handleCreateNewDid: /api/did/create 响应:", response);
@@ -617,19 +795,20 @@
             const newDidString = newDidDocument.id;
             const newKeyId = newDidDocument.authentication && newDidDocument.authentication.length > 0
                 ? newDidDocument.authentication[0]
-                : `${newDidString}#keys-1`;
+                : `${newDidString}#keys-1`; // 后端应确保 authentication[0] 是有效的 key ID
 
+            // 将新生成的密钥对（包含私钥）存储到本地 IndexedDB
             await addLocalKeyToDbBlockChain({
-                didAndKeyId: newKeyId,
+                didAndKeyId: newKeyId, // 主键，通常是完整的 key ID
                 did: newDidString,
-                keyId: newKeyId,
-                publicKeyBase64: publicKeyBase64,
-                privateKey: keyPair.privateKey
+                keyId: newKeyId, // 单独存储 keyId 方便查询
+                publicKeyBase64: publicKeyBase64, // 存储公钥的Base64形式
+                privateKey: keyPair.privateKey // 存储 CryptoKey 私钥对象
             });
 
             showMessage('generalMessageArea', `新DID ${newDidString} (密钥ID: ${newKeyId}) 已创建并在浏览器中存储其密钥。`, 'success');
             displayJsonInBox(currentDisplayBoxId, newDidDocument, '新DID文档: \n');
-            await populateDidSelectorsInModal();
+            await populateDidSelectorsInModal(); // 更新模态框中的DID列表
 
         } catch (error) {
             console.error('创建新DID时出错:', error);
@@ -638,9 +817,10 @@
         }
     }
 
-    // --- 填充 DID 选择器 ---
+    // --- 填充 DID 选择器 (populateDidSelectorsInModal, populateKeyIdSelectors) ---
+    // (保持不变)
     const didKeyManagementModal = document.getElementById('didKeyManagementModal');
-    const openDidUpdateModalBtn = document.getElementById('openDidUpdateModalBtn');
+    // const openDidUpdateModalBtn = document.getElementById('openDidUpdateModalBtn'); // 已在上面获取
     const closeDidKeyManagementModalBtn = document.getElementById('closeDidKeyManagementModalBtn');
 
     const tabAddKey = document.getElementById('tabAddKey');
@@ -657,10 +837,15 @@
     const removeKey_keyIdToRemoveSelect = document.getElementById('removeKey_keyIdToRemove');
     const removeKey_authorizingKeyIdSelect = document.getElementById('removeKey_authorizingKeyId');
 
+    async function populateDidSelectorsInModal() { /* ... */ }
+    async function populateKeyIdSelectors(didString, authorizingSelectElem, toRemoveSelectElem = null) { /* ... */ }
+    addKey_didToUpdateSelect.addEventListener('change', function() { /* ... */ });
+    removeKey_didToUpdateSelect.addEventListener('change', function() { /* ... */ });
+    // --- 粘贴模态框选择器填充和事件监听逻辑 ---
     async function populateDidSelectorsInModal() {
         try {
-            const keys = await getAllLocalKeysFromDbBlockChain();
-            const uniqueDids = [...new Set(keys.map(k => k.did))];
+            const keys = await getAllLocalKeysFromDbBlockChain(); // 获取本地存储的所有密钥信息
+            const uniqueDids = [...new Set(keys.map(k => k.did))]; // 从中提取唯一的DID字符串
 
             const selectsToPopulate = [addKey_didToUpdateSelect, removeKey_didToUpdateSelect];
             selectsToPopulate.forEach(selectElem => {
@@ -670,16 +855,16 @@
                 });
             });
 
+            // 清空依赖于DID选择的keyId选择器
             addKey_authorizingKeyIdSelect.innerHTML = '<option value="">-- (先选DID) --</option>';
             removeKey_keyIdToRemoveSelect.innerHTML = '<option value="">-- (先选DID) --</option>';
             removeKey_authorizingKeyIdSelect.innerHTML = '<option value="">-- (先选DID) --</option>';
 
         } catch (error) {
-            console.error("填充模态框选择器失败:", error);
+            console.error("填充模态框DID选择器失败:", error);
             showMessage('generalMessageArea', '加载本地DID列表到模态框失败: ' + error.message, 'error');
         }
     }
-
     async function populateKeyIdSelectors(didString, authorizingSelectElem, toRemoveSelectElem = null) {
         authorizingSelectElem.innerHTML = '<option value="">-- 加载中... --</option>';
         if (toRemoveSelectElem) toRemoveSelectElem.innerHTML = '<option value="">-- 加载中... --</option>';
@@ -690,12 +875,14 @@
             return;
         }
         try {
+            // 从本地存储的密钥中筛选出属于选定DID的密钥ID
             const keysForSelectedDid = (await getAllLocalKeysFromDbBlockChain()).filter(k => k.did === didString);
-            authorizingSelectElem.innerHTML = '';
+            authorizingSelectElem.innerHTML = ''; // 清空选项
             if (toRemoveSelectElem) toRemoveSelectElem.innerHTML = '';
 
             if (keysForSelectedDid.length > 0) {
                 keysForSelectedDid.forEach(keyInfo => {
+                    // keyInfo.keyId 应该是完整的密钥ID，例如 "did:example:123#keys-1"
                     authorizingSelectElem.add(new Option(keyInfo.keyId, keyInfo.keyId));
                     if (toRemoveSelectElem) {
                         toRemoveSelectElem.add(new Option(keyInfo.keyId, keyInfo.keyId));
@@ -713,7 +900,6 @@
             if (toRemoveSelectElem) toRemoveSelectElem.innerHTML = `<option value="">${errorMsg}</option>`;
         }
     }
-
     addKey_didToUpdateSelect.addEventListener('change', function() {
         populateKeyIdSelectors(this.value, addKey_authorizingKeyIdSelect);
     });
@@ -721,7 +907,11 @@
         populateKeyIdSelectors(this.value, removeKey_authorizingKeyIdSelect, removeKey_keyIdToRemoveSelect);
     });
 
-    // 表单提交：添加密钥
+
+    // --- 表单提交：添加密钥 (didAddKeyForm) ---
+    // (保持不变，但要注意签名负载的生成需要与后端一致)
+    didAddKeyForm.addEventListener('submit', async function(event) { /* ... */ });
+    // --- 粘贴添加密钥表单提交逻辑 ---
     didAddKeyForm.addEventListener('submit', async function(event) {
         event.preventDefault();
         const msgAreaId = 'didAddKeyMessageArea';
@@ -732,44 +922,70 @@
         const newKeyIdFragment = document.getElementById('addKey_newKeyIdFragment').value;
         const newKeyType = document.getElementById('addKey_newKeyType').value;
         const newPublicKeyBase64 = document.getElementById('addKey_newPublicKeyBase64').value;
-        const newKeyController = document.getElementById('addKey_newKeyController').value || didToUpdate;
+        const newKeyController = document.getElementById('addKey_newKeyController').value || didToUpdate; // 默认为DID本身
 
         if (!didToUpdate || !authorizingKeyId || !newKeyIdFragment || !newKeyType || !newPublicKeyBase64) {
             showMessage(msgAreaId, '所有必填字段都必须填写。', 'error', false); return;
         }
 
         try {
+            // 1. 请求挑战
             const challengeResponse = await fetch(`${API_BASE_URL}/did/update/add-key/challenge`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', }, credentials: 'include',
+                method: 'POST', headers: { 'Content-Type': 'application/json', }, // credentials: 'omit',
                 body: JSON.stringify({ did: didToUpdate, authorizingKeyId: authorizingKeyId })
             });
-            const challengeResultText = await challengeResponse.text();
+            const challengeResultText = await challengeResponse.text(); // 获取文本以调试
+            console.log("Add Key Challenge Response Text:", challengeResultText);
             const challengeResult = JSON.parse(challengeResultText);
             if (!challengeResponse.ok) throw new Error(challengeResult.message || challengeResult.error || "获取添加密钥挑战失败");
 
             currentChallengeForAddKey = challengeResult.challenge;
+
+            // 2. 准备签名负载 (必须与后端 DidController 中构建签名验证负载的结构完全一致)
             const newPublicKeyInfo = { idFragment: newKeyIdFragment, type: newKeyType, publicKeyBase64: newPublicKeyBase64, controller: newKeyController };
-            payloadToSignForAddKey = { operationType: "addKey", did: didToUpdate, authorizingKeyId: authorizingKeyId, challenge: currentChallengeForAddKey, newPublicKeyInfo: newPublicKeyInfo };
-            const payloadString = JSON.stringify(payloadToSignForAddKey);
+            payloadToSignForAddKey = {
+                operationType: "addKey", // 与后端一致
+                did: didToUpdate,
+                authorizingKeyId: authorizingKeyId,
+                challenge: currentChallengeForAddKey, // 使用从服务器获取的挑战
+                newPublicKeyInfo: newPublicKeyInfo
+            };
+            const payloadString = JSON.stringify(payloadToSignForAddKey); // 序列化为JSON字符串进行签名
+            console.log("Payload to sign for addKey:", payloadString);
 
-            const authorizingKeyInfo = await getLocalKeyFromDbBlockChain(authorizingKeyId);
-            if (!authorizingKeyInfo || !authorizingKeyInfo.privateKey) throw new Error(`无法从浏览器存储中找到授权私钥 (KeyID: ${authorizingKeyId})。`);
 
+            // 3. 从本地 IndexedDB 获取授权私钥
+            const authorizingKeyInfo = await getLocalKeyFromDbBlockChain(authorizingKeyId); // keyId应该是完整的
+            if (!authorizingKeyInfo || !authorizingKeyInfo.privateKey) {
+                throw new Error(`无法从浏览器存储中找到授权私钥 (KeyID: ${authorizingKeyId})。请确保该密钥已在本地生成或导入。`);
+            }
+
+            // 4. 客户端签名
             const signature = await clientSignData(authorizingKeyInfo.privateKey, payloadString);
+            console.log("Client-side signature for addKey:", signature);
 
-            const executeUpdateRequest = { did: didToUpdate, newPublicKeyInfo: newPublicKeyInfo, authorizingKeyId: authorizingKeyId, challenge: currentChallengeForAddKey, signatureBase64: signature };
+            // 5. 执行添加密钥操作
+            const executeUpdateRequest = {
+                did: didToUpdate,
+                newPublicKeyInfo: newPublicKeyInfo,
+                authorizingKeyId: authorizingKeyId,
+                challenge: currentChallengeForAddKey, // 再次发送挑战，供服务器验证
+                signatureBase64: signature
+            };
             const executeResponse = await fetch(`${API_BASE_URL}/did/update/add-key/execute`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', }, credentials: 'include',
+                method: 'POST', headers: { 'Content-Type': 'application/json', }, // credentials: 'omit',
                 body: JSON.stringify(executeUpdateRequest)
             });
-            const executeResultText = await executeResponse.text();
+            const executeResultText = await executeResponse.text(); // 获取文本以调试
+            console.log("Execute Add Key Response Text:", executeResultText);
             const executeResult = JSON.parse(executeResultText);
+
             if (!executeResponse.ok) throw new Error(executeResult.message || executeResult.error || "执行添加密钥失败");
 
             if (executeResult.success) {
                 showMessage(msgAreaId, '添加新密钥成功！' + (executeResult.message || ''), 'success');
                 displayJsonInBox('displayBox1', executeResult.updatedDidDocument, '更新后的DID文档 (添加密钥): \n');
-                await populateDidSelectorsInModal();
+                await populateDidSelectorsInModal(); // 刷新模态框中的选择器
             } else {
                 throw new Error(executeResult.message || "添加密钥执行失败，服务器未提供明确错误。");
             }
@@ -779,7 +995,11 @@
         }
     });
 
-    // 表单提交：移除密钥
+
+    // --- 表单提交：移除密钥 (didRemoveKeyForm) ---
+    // (保持不变，但要注意签名负载的生成需要与后端一致)
+    didRemoveKeyForm.addEventListener('submit', async function(event) { /* ... */ });
+    // --- 粘贴移除密钥表单提交逻辑 ---
     didRemoveKeyForm.addEventListener('submit', async function(event) {
         event.preventDefault();
         const msgAreaId = 'didRemoveKeyMessageArea';
@@ -793,50 +1013,76 @@
             showMessage(msgAreaId, '所有字段都必须选择或填写。', 'error', false); return;
         }
         if (keyIdToRemove === authorizingKeyId) {
-            if (!confirm("警告：您正在尝试使用一个密钥来授权移除其自身。如果这是该DID唯一的认证方法，可能会导致DID失控。确定要继续吗？")) {
+            if (!confirm("警告：您正在尝试使用一个密钥来授权移除其自身。如果这是该DID唯一的认证方法或关键密钥，可能会导致DID失控或无法进一步管理。确定要继续吗？")) {
                 showMessage(msgAreaId, '操作已取消。', 'info'); return;
             }
         }
 
         try {
+            // 1. 请求挑战
             const challengeResponse = await fetch(`${API_BASE_URL}/did/update/remove-key/challenge`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', }, credentials: 'include',
+                method: 'POST', headers: { 'Content-Type': 'application/json', }, // credentials: 'omit',
                 body: JSON.stringify({ did: didToUpdate, authorizingKeyId: authorizingKeyId, keyIdToRemove: keyIdToRemove })
             });
             const challengeResultText = await challengeResponse.text();
+            console.log("Remove Key Challenge Response Text:", challengeResultText);
             const challengeResult = JSON.parse(challengeResultText);
             if (!challengeResponse.ok) throw new Error(challengeResult.message || challengeResult.error || "获取移除密钥挑战失败");
 
             currentChallengeForRemoveKey = challengeResult.challenge;
-            payloadToSignForRemoveKey = { operationType: "removeKey", did: didToUpdate, authorizingKeyId: authorizingKeyId, challenge: currentChallengeForRemoveKey, keyIdToRemove: keyIdToRemove };
+
+            // 2. 准备签名负载 (必须与后端 DidController 中构建签名验证负载的结构完全一致)
+            payloadToSignForRemoveKey = {
+                operationType: "removeKey", // 与后端一致
+                did: didToUpdate,
+                authorizingKeyId: authorizingKeyId,
+                challenge: currentChallengeForRemoveKey, // 使用从服务器获取的挑战
+                keyIdToRemove: keyIdToRemove
+            };
             const payloadString = JSON.stringify(payloadToSignForRemoveKey);
+            console.log("Payload to sign for removeKey:", payloadString);
 
+            // 3. 从本地 IndexedDB 获取授权私钥
             const authorizingKeyInfo = await getLocalKeyFromDbBlockChain(authorizingKeyId);
-            if (!authorizingKeyInfo || !authorizingKeyInfo.privateKey) throw new Error(`无法从浏览器存储中找到授权私钥 (KeyID: ${authorizingKeyId})。`);
+            if (!authorizingKeyInfo || !authorizingKeyInfo.privateKey) {
+                throw new Error(`无法从浏览器存储中找到授权私钥 (KeyID: ${authorizingKeyId})。`);
+            }
 
+            // 4. 客户端签名
             const signature = await clientSignData(authorizingKeyInfo.privateKey, payloadString);
+            console.log("Client-side signature for removeKey:", signature);
 
-            const executeRemovalRequest = { did: didToUpdate, keyIdToRemove: keyIdToRemove, authorizingKeyId: authorizingKeyId, challenge: currentChallengeForRemoveKey, signatureBase64: signature };
+            // 5. 执行移除密钥操作
+            const executeRemovalRequest = {
+                did: didToUpdate,
+                keyIdToRemove: keyIdToRemove,
+                authorizingKeyId: authorizingKeyId,
+                challenge: currentChallengeForRemoveKey,
+                signatureBase64: signature
+            };
             const executeResponse = await fetch(`${API_BASE_URL}/did/update/remove-key/execute`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', }, credentials: 'include',
+                method: 'POST', headers: { 'Content-Type': 'application/json', }, // credentials: 'omit',
                 body: JSON.stringify(executeRemovalRequest)
             });
             const executeResultText = await executeResponse.text();
+            console.log("Execute Remove Key Response Text:", executeResultText);
             const executeResult = JSON.parse(executeResultText);
+
             if (!executeResponse.ok) throw new Error(executeResult.message || executeResult.error || "执行移除密钥失败");
 
             if (executeResult.success) {
                 showMessage(msgAreaId, `密钥 ${keyIdToRemove} 移除成功！` + (executeResult.message || ''), 'success');
                 displayJsonInBox('displayBox1', executeResult.updatedDidDocument, '更新后的DID文档 (移除密钥): \n');
 
+                // 如果服务器成功移除了密钥，也尝试从本地 IndexedDB 中删除该密钥（如果它存在）
                 try {
-                    await deleteLocalKeyFromDbBlockChain(keyIdToRemove);
-                    showMessage(msgAreaId, `密钥 ${keyIdToRemove} 也已从浏览器本地存储中移除。`, 'info', true);
+                    await deleteLocalKeyFromDbBlockChain(keyIdToRemove); // keyIdToRemove 是完整的密钥ID
+                    showMessage(msgAreaId, `密钥 ${keyIdToRemove} 也已从浏览器本地存储中移除（如果存在）。`, 'info', true);
                 } catch (dbError) {
-                    console.warn(`从IndexedDB删除密钥 ${keyIdToRemove} 失败:`, dbError);
-                    showMessage(msgAreaId, `警告: 服务器移除密钥成功，但本地删除出错。`, 'info', false);
+                    console.warn(`从IndexedDB删除密钥 ${keyIdToRemove} 失败 (可能它不是本地生成的，或者已删除):`, dbError);
+                    // 不应因此使整体操作失败，仅记录警告
                 }
-                await populateDidSelectorsInModal();
+                await populateDidSelectorsInModal(); // 刷新模态框选择器
             } else {
                 throw new Error(executeResult.message || "移除密钥执行失败，服务器未提供明确错误。");
             }
@@ -845,7 +1091,7 @@
             showMessage(msgAreaId, `移除密钥失败: ${error.message}`, 'error', false);
         }
     });
-    </script>
-</body>
 
-</html>
+    </script>
+    </body>
+    </html>

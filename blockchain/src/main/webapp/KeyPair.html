@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSA 密钥生成与签名工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .io-display {
+            font-family: 'Consolas', 'Monaco', monospace;
+            word-break: break-all;
+            background-color: #f7fafc; /* bg-gray-50 */
+            border: 1px solid #e2e8f0; /* border-gray-300 */
+            padding: 0.5rem;
+            border-radius: 0.375rem; /* rounded-md */
+            min-height: 80px;
+            white-space: pre-wrap; /* 保留换行和空格 */
+        }
+        .key-display {
+            min-height: 120px;
+        }
+        .btn-copy {
+            transition: background-color 0.2s ease-in-out;
+        }
+        .btn-copy:active {
+            transform: scale(0.98);
+        }
+        .warning-banner {
+            background-color: #fffbea; /* bg-yellow-50 */
+            border-left-width: 4px;
+            border-color: #fddf7f; /* border-yellow-400 */
+            padding: 1rem;
+        }
+        .warning-banner p {
+            color: #7f5b00; /* text-yellow-700 */
+        }
+        /* 添加加载动画样式 */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block; /* 使其可以和文字在同一行 */
+            margin-left: 8px; /* 和按钮文字的间距 */
+            vertical-align: middle; /* 垂直居中对齐 */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-4">
+
+<div class="bg-white shadow-xl rounded-lg p-6 md:p-8 w-full max-w-2xl">
+    <header class="mb-6 text-center">
+        <h1 class="text-2xl md:text-3xl font-bold text-gray-800">RSA 密钥对生成与签名工具</h1>
+        <p class="text-gray-600 mt-1">用于测试和开发，请勿在生产环境中使用此方式处理敏感私钥。</p>
+    </header>
+
+    <section class="mb-8">
+        <h2 class="text-xl font-semibold text-gray-700 mb-3">1. 生成 RSA 密钥对</h2>
+        <button id="generateKeysBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex items-center justify-center">
+            生成新的 2048位 RSA 密钥对
+            <span id="keyLoader" class="loader hidden"></span>
+        </button>
+
+        <div class="mt-4">
+            <label for="publicKeyDisplay" class="block text-sm font-medium text-gray-700 mb-1">公钥 (Base64 - 用于注册DID):</label>
+            <div class="relative">
+                <textarea id="publicKeyDisplay" rows="4" class="io-display key-display w-full text-xs" readonly placeholder="点击上方按钮生成公钥..."></textarea>
+                <button onclick="copyToClipboard('publicKeyDisplay', '公钥')" class="absolute top-2 right-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold py-1 px-2 rounded btn-copy">复制</button>
+            </div>
+        </div>
+
+        <div class="mt-4 warning-banner rounded-md">
+            <p class="text-sm font-semibold">⚠️ 安全警告</p>
+            <p class="text-xs mt-1">私钥拥有您身份的全部控制权。下方显示的私钥仅用于测试目的。在实际应用中，私钥必须安全存储，绝不能如此暴露。</p>
+        </div>
+        <div class="mt-2">
+            <label for="privateKeyDisplay" class="block text-sm font-medium text-gray-700 mb-1">私钥 (Base64 - 请妥善保管!):</label>
+            <div class="relative">
+                <textarea id="privateKeyDisplay" rows="6" class="io-display key-display w-full text-xs" readonly placeholder="点击上方按钮生成私钥..."></textarea>
+                <button onclick="copyToClipboard('privateKeyDisplay', '私钥')" class="absolute top-2 right-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold py-1 px-2 rounded btn-copy">复制</button>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-xl font-semibold text-gray-700 mb-3">2. 使用私钥签名挑战码</h2>
+        <div class="mb-4">
+            <label for="challengeInput" class="block text-sm font-medium text-gray-700 mb-1">输入挑战码 (来自服务器):</label>
+            <input type="text" id="challengeInput" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="在此处粘贴挑战码">
+        </div>
+
+        <button id="signChallengeBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 flex items-center justify-center" disabled>
+            使用上方生成的私钥进行签名 (SHA-256 with RSA)
+            <span id="signLoader" class="loader hidden"></span>
+        </button>
+
+        <div class="mt-4">
+            <label for="signatureDisplay" class="block text-sm font-medium text-gray-700 mb-1">签名结果 (Base64 - 用于登录验证):</label>
+            <div class="relative">
+                <textarea id="signatureDisplay" rows="4" class="io-display w-full text-xs" readonly placeholder="点击上方按钮生成签名..."></textarea>
+                <button onclick="copyToClipboard('signatureDisplay', '签名')" class="absolute top-2 right-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold py-1 px-2 rounded btn-copy">复制</button>
+            </div>
+        </div>
+    </section>
+
+    <footer class="mt-8 text-center text-xs text-gray-500">
+        <p>&copy; 2024-2025 区块链测试工具. 所有操作均在浏览器本地完成。</p>
+    </footer>
+</div>
+
+<script>
+    let currentKeyPair = null; // 用于存储生成的密钥对 (CryptoKey 对象)
+    const generateKeysBtn = document.getElementById('generateKeysBtn');
+    const signChallengeBtn = document.getElementById('signChallengeBtn');
+    const publicKeyDisplay = document.getElementById('publicKeyDisplay');
+    const privateKeyDisplay = document.getElementById('privateKeyDisplay');
+    const challengeInput = document.getElementById('challengeInput');
+    const signatureDisplay = document.getElementById('signatureDisplay');
+    const keyLoader = document.getElementById('keyLoader');
+    const signLoader = document.getElementById('signLoader');
+
+    // 将 ArrayBuffer 转换为 Base64 字符串
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    // 将字符串转换为 ArrayBuffer (UTF-8编码)
+    function stringToArrayBuffer(str) {
+        const encoder = new TextEncoder(); // UTF-8 encoder
+        return encoder.encode(str); // 返回 Uint8Array, 也是 ArrayBufferView
+    }
+
+    async function generateRSAKeyPair() {
+        keyLoader.classList.remove('hidden');
+        generateKeysBtn.disabled = true;
+        signChallengeBtn.disabled = true;
+        publicKeyDisplay.value = '正在生成...';
+        privateKeyDisplay.value = '正在生成...';
+        signatureDisplay.value = ''; // 清除旧签名
+
+        try {
+            currentKeyPair = await window.crypto.subtle.generateKey(
+                {
+                    name: "RSASSA-PKCS1-v1_5", // RSA签名算法
+                    modulusLength: 2048, // 密钥长度
+                    publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // 65537
+                    hash: {name: "SHA-256"}, // 签名时使用的哈希算法
+                },
+                true, // 是否可导出私钥
+                ["sign", "verify"] // 密钥用途：签名和验证
+            );
+
+            // 导出公钥为 SPKI 格式，然后转为 Base64
+            const publicKeySpki = await window.crypto.subtle.exportKey(
+                "spki",
+                currentKeyPair.publicKey
+            );
+            publicKeyDisplay.value = arrayBufferToBase64(publicKeySpki);
+
+            // 导出私钥为 PKCS#8 格式，然后转为 Base64
+            const privateKeyPkcs8 = await window.crypto.subtle.exportKey(
+                "pkcs8",
+                currentKeyPair.privateKey
+            );
+            privateKeyDisplay.value = arrayBufferToBase64(privateKeyPkcs8);
+
+            signChallengeBtn.disabled = false; // 启用签名按钮
+            showToast('密钥对生成成功！', 'success');
+
+        } catch (error) {
+            console.error("密钥生成失败:", error);
+            publicKeyDisplay.value = "错误: " + error.message;
+            privateKeyDisplay.value = "错误: " + error.message;
+            showToast('密钥生成失败: ' + error.message, 'error');
+        } finally {
+            keyLoader.classList.add('hidden');
+            generateKeysBtn.disabled = false;
+        }
+    }
+
+    async function signChallenge() {
+        if (!currentKeyPair || !currentKeyPair.privateKey) {
+            showToast('请先生成密钥对。', 'warning');
+            return;
+        }
+        const challenge = challengeInput.value;
+        if (!challenge.trim()) {
+            showToast('请输入有效的挑战码。', 'warning');
+            return;
+        }
+
+        signLoader.classList.remove('hidden');
+        signChallengeBtn.disabled = true;
+        signatureDisplay.value = '正在签名...';
+
+        try {
+            const challengeBuffer = stringToArrayBuffer(challenge);
+            const signatureBuffer = await window.crypto.subtle.sign(
+                {
+                    name: "RSASSA-PKCS1-v1_5",
+                },
+                currentKeyPair.privateKey,
+                challengeBuffer
+            );
+            signatureDisplay.value = arrayBufferToBase64(signatureBuffer);
+            showToast('挑战码签名成功！', 'success');
+
+        } catch (error) {
+            console.error("签名失败:", error);
+            signatureDisplay.value = "错误: " + error.message;
+            showToast('签名失败: ' + error.message, 'error');
+        } finally {
+            signLoader.classList.add('hidden');
+            signChallengeBtn.disabled = false;
+        }
+    }
+
+    function copyToClipboard(elementId, fieldName = '内容') {
+        const textarea = document.getElementById(elementId);
+        if (!textarea.value) {
+            showToast('没有' + fieldName + '可复制。', 'info');
+            return;
+        }
+        textarea.select();
+        document.execCommand('copy');
+        showToast(fieldName + '已复制到剪贴板！', 'success');
+    }
+
+    // 简易的 Toast 通知
+    function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.className = 'fixed bottom-5 right-5 p-3 rounded-md shadow-lg text-white text-sm z-50';
+        if (type === 'success') {
+            toast.classList.add('bg-green-500');
+        } else if (type === 'error') {
+            toast.classList.add('bg-red-500');
+        } else if (type === 'warning') {
+            toast.classList.add('bg-yellow-500');
+        } else {
+            toast.classList.add('bg-blue-500');
+        }
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+
+    generateKeysBtn.addEventListener('click', generateRSAKeyPair);
+    signChallengeBtn.addEventListener('click', signChallenge);
+
+    // 页面加载时可以自动生成一次密钥对，或让用户手动点击
+    // generateRSAKeyPair();
+</script>
+</body>
+</html>
