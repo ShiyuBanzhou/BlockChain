@@ -51,7 +51,29 @@ class AuthHelper {
      */
     static async fetchWithAuth(url, options = {}) {
         if (!this.isAuthenticated()) {
-            window.location.href = 'login.html';
+            // 防止循环重定向
+            const currentUrl = window.location.href;
+            // 检查是否在登录页面
+            if (currentUrl.includes('login.html')) {
+                return Promise.reject(new Error('未认证'));
+            }
+            
+            // 检查重定向计数
+            const redirectCount = parseInt(localStorage.getItem('redirect_count') || '0');
+            if (redirectCount > 5) {
+                // 重置计数
+                localStorage.removeItem('redirect_count');
+                localStorage.removeItem('blockchain_auth_status');
+                // 强制重定向到登录页面并阻止新的重定向
+                window.location.href = 'login.html?no_redirect=true';
+                return Promise.reject(new Error('检测到循环重定向，已重置认证状态'));
+            }
+            
+            // 增加重定向计数
+            localStorage.setItem('redirect_count', (redirectCount + 1).toString());
+            
+            // 正常重定向到登录页面
+            window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.href);
             return Promise.reject(new Error('未认证'));
         }
         
@@ -75,8 +97,9 @@ class AuthHelper {
             if (response.status === 401) {
                 console.error('认证已过期或无效');
                 localStorage.removeItem('blockchain_auth_status');
+                localStorage.removeItem('redirect_count');
                 alert('您的登录已过期，请重新登录');
-                window.location.href = 'login.html';
+                window.location.href = 'login.html?no_redirect=true';
                 return Promise.reject(new Error('认证已过期'));
             }
             
@@ -88,16 +111,57 @@ class AuthHelper {
     }
     
     /**
-     * 注销当前用户
+     * 验证服务器端认证状态
+     * @returns {Promise<boolean>} 认证状态是否有效
      */
-    static logout() {
+    static async verifyAuthStatus() {
+        if (!this.isAuthenticated()) {
+            return false;
+        }
+        
+        try {
+            const response = await fetch('/api/did/auth/session-status', {
+                method: 'GET', 
+                headers: {
+                    'X-Auth-Token': this.getAuthToken(),
+                    'X-Auth-Session': this.getSessionId(),
+                    'X-Auth-DID': this.getCurrentDid() || ''
+                }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                if (result.isAuthenticated) {
+                    // 重置重定向计数
+                    localStorage.setItem('redirect_count', '0');
+                    return true;
+                }
+            }
+            
+            // 认证失效，清除本地状态
+            this.logout(false); // 不自动重定向
+            return false;
+        } catch (error) {
+            console.error('验证认证状态失败:', error);
+            return this.isAuthenticated(); // 网络错误时，保持当前状态
+        }
+    }
+    
+    /**
+     * 注销当前用户
+     * @param {boolean} redirect - 是否重定向到登录页面
+     */
+    static logout(redirect = true) {
         localStorage.removeItem('blockchain_auth_status');
         localStorage.removeItem('blockchain_auth_token');
         localStorage.removeItem('blockchain_auth_did');
         localStorage.removeItem('blockchain_auth_type');
         localStorage.removeItem('blockchain_auth_session');
+        localStorage.removeItem('redirect_count');
         
-        window.location.href = 'login.html';
+        if (redirect) {
+            window.location.href = 'login.html?no_redirect=true';
+        }
     }
 }
 
@@ -105,6 +169,24 @@ class AuthHelper {
 document.addEventListener('DOMContentLoaded', () => {
     // 如果当前不是登录页面且未认证，则重定向到登录页面
     if (!window.location.pathname.includes('login.html') && !AuthHelper.isAuthenticated()) {
-        window.location.href = 'login.html';
+        // 检查重定向计数，防止循环重定向
+        const redirectCount = parseInt(localStorage.getItem('redirect_count') || '0');
+        if (redirectCount > 5) {
+            // 重置认证状态和重定向计数
+            localStorage.removeItem('blockchain_auth_status');
+            localStorage.removeItem('redirect_count');
+            window.location.href = 'login.html?no_redirect=true';
+        } else {
+            // 增加重定向计数
+            localStorage.setItem('redirect_count', (redirectCount + 1).toString());
+            window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.href);
+        }
+    } else if (AuthHelper.isAuthenticated()) {
+        // 如果已认证，验证服务器端认证状态
+        AuthHelper.verifyAuthStatus().then(isValid => {
+            if (!isValid && !window.location.pathname.includes('login.html')) {
+                window.location.href = 'login.html?no_redirect=true';
+            }
+        });
     }
 }); 

@@ -38,6 +38,8 @@ public class WebConfig implements WebMvcConfigurer {
                         // DID 认证流程API
                         "/api/did/auth/challenge",
                         "/api/did/auth/verify",
+                        // 新增：会话状态验证API
+                        "/api/did/auth/session-status",
                         // 新增：匿名认证流程API
                         "/api/did/auth/anonymous-challenge", // <--- 新增排除
                         "/api/did/auth/anonymous-verify",   // <--- 新增排除

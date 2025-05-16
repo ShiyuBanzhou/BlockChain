@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链投票系统 - 创建选举</title>
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css">
+    <style>
+        .candidate-item {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            position: relative;
+        }
+        .remove-candidate {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            cursor: pointer;
+            color: #dc3545;
+        }
+        .candidate-preview {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">区块链投票系统</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav mr-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="BlockChain.html">区块链信息</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="elections.html">选举列表</a>
+                    </li>
+                    <li class="nav-item active">
+                        <a class="nav-link" href="create-election.html">创建选举</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="my-votes.html">我的投票</a>
+                    </li>
+                </ul>
+                <div class="navbar-text" id="userInfo">
+                    未登录
+                </div>
+                <button class="btn btn-outline-light ml-2" id="loginBtn">登录</button>
+                <button class="btn btn-outline-light ml-2 d-none" id="logoutBtn">退出</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2>创建新选举</h2>
+        <div class="alert alert-info" id="loginAlert">
+            <strong>提示：</strong> 您需要登录后才能创建选举。
+            <button class="btn btn-primary btn-sm ml-3" id="alertLoginBtn">去登录</button>
+        </div>
+
+        <form id="electionForm" class="hidden">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">基本信息</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="title">选举标题 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="title" placeholder="例如：2023年学生会主席选举" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="description">选举描述 <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="description" rows="3" placeholder="请输入选举的详细说明，目的和背景等信息" required></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="startDate">开始日期 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control datepicker" id="startDate" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="startTime">开始时间 <span class="text-danger">*</span></label>
+                                <input type="time" class="form-control" id="startTime" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="endDate">结束日期 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control datepicker" id="endDate" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="endTime">结束时间 <span class="text-danger">*</span></label>
+                                <input type="time" class="form-control" id="endTime" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="rules">选举规则</label>
+                        <textarea class="form-control" id="rules" rows="2" placeholder="选填，输入选举规则或注意事项"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">候选人</h5>
+                    <button type="button" class="btn btn-primary btn-sm" id="addCandidateBtn">
+                        <i class="fas fa-plus"></i> 添加候选人
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="candidatesList">
+                        <div class="alert alert-warning">
+                            请添加至少一名候选人。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mb-5">
+                <button type="submit" class="btn btn-lg btn-primary" id="submitBtn">
+                    创建选举
+                </button>
+                <a href="elections.html" class="btn btn-lg btn-outline-secondary ml-2">
+                    取消
+                </a>
+            </div>
+        </form>
+
+        <div id="loadingArea" class="text-center py-5 hidden">
+            <div class="spinner-border text-primary" role="status">
+                <span class="sr-only">Loading...</span>
+            </div>
+            <p class="mt-2">正在创建选举...</p>
+        </div>
+
+        <div id="successArea" class="text-center py-5 hidden">
+            <div class="alert alert-success">
+                <h4 class="alert-heading"><i class="fas fa-check-circle"></i> 选举创建成功！</h4>
+                <p>您的选举已经成功创建，将在指定时间开始。</p>
+                <hr>
+                <p id="successElectionTitle" class="mb-0"></p>
+                <div class="mt-3">
+                    <a id="viewElectionBtn" href="#" class="btn btn-primary">
+                        查看选举详情
+                    </a>
+                    <a href="elections.html" class="btn btn-outline-primary ml-2">
+                        返回选举列表
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 候选人模板 -->
+    <template id="candidateTemplate">
+        <div class="candidate-item" data-index="__INDEX__">
+            <div class="remove-candidate">
+                <i class="fas fa-times"></i>
+            </div>
+            <h5>候选人 #__INDEX__</h5>
+            <div class="row">
+                <div class="col-md-9">
+                    <div class="form-group">
+                        <label>候选人姓名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control candidate-name" placeholder="输入候选人姓名" required>
+                    </div>
+                    <div class="form-group">
+                        <label>候选人简介 <span class="text-danger">*</span></label>
+                        <textarea class="form-control candidate-profile" rows="2" placeholder="输入候选人简介、背景或竞选宣言等" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>图片URL (可选)</label>
+                        <input type="url" class="form-control candidate-image-url" placeholder="输入候选人图片URL">
+                        <small class="form-text text-muted">如不填写，将使用默认图片</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <img src="https://via.placeholder.com/100?text=候选人" class="candidate-preview mt-4">
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/font-awesome/5.15.1/js/all.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap-datepicker/1.9.0/locales/bootstrap-datepicker.zh-CN.min.js"></script>
+    <script src="js/auth-helper.js"></script>
+    <script src="js/election-helper.js"></script>
+    <script>
+        $(document).ready(function() {
+            const electionHelper = new ElectionHelper();
+            let candidateCount = 0;
+            
+            // 初始化日期选择器
+            $('.datepicker').datepicker({
+                format: 'yyyy-mm-dd',
+                autoclose: true,
+                language: 'zh-CN',
+                todayHighlight: true
+            });
+            
+            // 设置默认日期为今天和明天
+            const today = new Date();
+            const tomorrow = new Date();
+            tomorrow.setDate(today.getDate() + 1);
+            
+            $('#startDate').datepicker('setDate', today);
+            $('#endDate').datepicker('setDate', tomorrow);
+            
+            // 检查登录状态
+            updateLoginStatus();
+            
+            // 登录/登出按钮
+            $('#loginBtn, #alertLoginBtn').click(function() {
+                window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.href);
+            });
+            
+            $('#logoutBtn').click(function() {
+                AuthHelper.logout();
+                updateLoginStatus();
+            });
+            
+            // 添加候选人按钮
+            $('#addCandidateBtn').click(function() {
+                addCandidateField();
+            });
+            
+            // 表单提交
+            $('#electionForm').submit(function(e) {
+                e.preventDefault();
+                
+                if (!validateForm()) {
+                    return;
+                }
+                
+                // 收集选举数据
+                const electionData = collectElectionData();
+                
+                // 显示加载状态
+                $('#electionForm').addClass('hidden');
+                $('#loadingArea').removeClass('hidden');
+                
+                // 提交创建选举请求
+                electionHelper.createElection(electionData)
+                    .then(response => {
+                        console.log('选举创建成功:', response);
+                        
+                        // 显示成功信息
+                        $('#loadingArea').addClass('hidden');
+                        $('#successArea').removeClass('hidden');
+                        $('#successElectionTitle').text(response.title);
+                        $('#viewElectionBtn').attr('href', `election-detail.html?id=${response.electionId}`);
+                    })
+                    .catch(error => {
+                        console.error('创建选举失败:', error);
+                        $('#loadingArea').addClass('hidden');
+                        $('#electionForm').removeClass('hidden');
+                        alert('创建选举失败: ' + (error.message || '未知错误'));
+                    });
+            });
+            
+            // 更新登录状态UI
+            function updateLoginStatus() {
+                if (AuthHelper.isAuthenticated()) {
+                    const did = AuthHelper.getCurrentDid();
+                    $('#userInfo').text(`你好，${did ? did.substring(0, 8) + '...' : '用户'}`);
+                    $('#loginBtn').addClass('d-none');
+                    $('#logoutBtn').removeClass('d-none');
+                    $('#loginAlert').addClass('hidden');
+                    $('#electionForm').removeClass('hidden');
+                } else {
+                    $('#userInfo').text('未登录');
+                    $('#loginBtn').removeClass('d-none');
+                    $('#logoutBtn').addClass('d-none');
+                    $('#loginAlert').removeClass('hidden');
+                    $('#electionForm').addClass('hidden');
+                }
+            }
+            
+            // 添加候选人字段
+            function addCandidateField() {
+                candidateCount++;
+                
+                // 清空提示
+                if (candidateCount === 1) {
+                    $('#candidatesList').empty();
+                }
+                
+                // 克隆模板
+                const template = document.getElementById('candidateTemplate');
+                const clone = template.content.cloneNode(true);
+                
+                // 替换索引
+                const indexPlaceholder = '__INDEX__';
+                const html = clone.firstElementChild.outerHTML.replaceAll(indexPlaceholder, candidateCount);
+                
+                // 添加到列表
+                $('#candidatesList').append(html);
+                
+                // 绑定删除事件
+                $('.remove-candidate').off('click').on('click', function() {
+                    $(this).closest('.candidate-item').remove();
+                    
+                    // 如果没有候选人，显示提示
+                    if ($('.candidate-item').length === 0) {
+                        $('#candidatesList').html(`
+                            <div class="alert alert-warning">
+                                请添加至少一名候选人。
+                            </div>
+                        `);
+                        candidateCount = 0;
+                    }
+                });
+                
+                // 图片URL更改事件
+                $('.candidate-image-url').off('input').on('input', function() {
+                    const url = $(this).val();
+                    const preview = $(this).closest('.candidate-item').find('.candidate-preview');
+                    
+                    if (url && url.trim() !== '') {
+                        preview.attr('src', url);
+                    } else {
+                        preview.attr('src', 'https://via.placeholder.com/100?text=候选人');
+                    }
+                });
+            }
+            
+            // 验证表单
+            function validateForm() {
+                const title = $('#title').val().trim();
+                const description = $('#description').val().trim();
+                const startDate = $('#startDate').val();
+                const startTime = $('#startTime').val();
+                const endDate = $('#endDate').val();
+                const endTime = $('#endTime').val();
+                
+                if (!title || !description || !startDate || !startTime || !endDate || !endTime) {
+                    alert('请填写所有必填字段');
+                    return false;
+                }
+                
+                const startDateTime = new Date(`${startDate}T${startTime}`);
+                const endDateTime = new Date(`${endDate}T${endTime}`);
+                
+                if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+                    alert('请输入有效的日期和时间');
+                    return false;
+                }
+                
+                if (endDateTime <= startDateTime) {
+                    alert('结束时间必须晚于开始时间');
+                    return false;
+                }
+                
+                // 检查是否有至少一名候选人
+                if ($('.candidate-item').length === 0) {
+                    alert('请添加至少一名候选人');
+                    return false;
+                }
+                
+                // 检查候选人信息
+                let isValid = true;
+                $('.candidate-item').each(function() {
+                    const name = $(this).find('.candidate-name').val().trim();
+                    const profile = $(this).find('.candidate-profile').val().trim();
+                    
+                    if (!name || !profile) {
+                        alert('请填写所有候选人的必填信息');
+                        isValid = false;
+                        return false; // break
+                    }
+                });
+                
+                return isValid;
+            }
+            
+            // 收集选举数据
+            function collectElectionData() {
+                const title = $('#title').val().trim();
+                const description = $('#description').val().trim();
+                const startDate = $('#startDate').val();
+                const startTime = $('#startTime').val();
+                const endDate = $('#endDate').val();
+                const endTime = $('#endTime').val();
+                const rules = $('#rules').val().trim();
+                
+                const startDateTime = new Date(`${startDate}T${startTime}`);
+                const endDateTime = new Date(`${endDate}T${endTime}`);
+                
+                // 收集候选人信息
+                const candidates = [];
+                $('.candidate-item').each(function() {
+                    const name = $(this).find('.candidate-name').val().trim();
+                    const profile = $(this).find('.candidate-profile').val().trim();
+                    const imageUrl = $(this).find('.candidate-image-url').val().trim();
+                    
+                    candidates.push({
+                        name: name,
+                        profile: profile,
+                        imageUrl: imageUrl || null
+                    });
+                });
+                
+                // 获取当前用户作为创建者
+                const currentDid = AuthHelper.getCurrentDid();
+                
+                // 构建选举数据对象
+                return {
+                    title: title,
+                    description: description,
+                    startTime: startDateTime.getTime(),
+                    endTime: endDateTime.getTime(),
+                    rules: rules || null,
+                    creatorId: currentDid || 'anonymous',
+                    status: "未开始", // 初始状态
+                    candidates: candidates
+                };
+            }
+            
+            // 添加初始候选人字段
+            addCandidateField();
+        });
+    </script>
+</body>
+</html> 

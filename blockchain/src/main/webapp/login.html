@@ -79,11 +79,43 @@
         .code-font {
             font-family: monospace;
         }
+        
+        /* 重置认证按钮样式 */
+        .reset-auth-button {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background-color: #EF4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .reset-auth-button:hover {
+            background-color: #DC2626;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<!-- 重置认证状态按钮 -->
+<button id="resetAuthButton" class="reset-auth-button">重置认证状态</button>
+
 <div class="login-container bg-white p-8 md:p-12 rounded-lg shadow-xl w-full max-w-lg">
     <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">身份认证</h2>
+
+    <!-- 检测循环重定向的警告 -->
+    <div id="redirectWarning" class="hidden bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6">
+        <p class="font-bold">检测到可能的循环重定向</p>
+        <p>您可能遇到了认证状态不同步问题。请尝试以下解决方案:</p>
+        <ol class="list-decimal pl-5 mt-2">
+            <li>点击页面右上角的"重置认证状态"按钮</li>
+            <li>完成重置后，按正常流程登录</li>
+            <li>如果问题仍然存在，请尝试清除浏览器缓存</li>
+        </ol>
+    </div>
 
     <div id="authOptions" class="mb-6 space-y-3">
         <h3 class="text-lg font-semibold text-gray-700 mb-2">选择登录方式</h3>
@@ -223,6 +255,74 @@
     <div id="createdDidInfo" class="hidden mt-2 p-3 bg-gray-100 rounded text-xs space-y-1"></div>
 
 </div>
+
+<!-- 添加脚本 -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // 检查URL参数是否包含no_redirect标记
+        const urlParams = new URLSearchParams(window.location.search);
+        const noRedirect = urlParams.get('no_redirect') === 'true';
+        
+        // 如果有no_redirect标记，则不执行自动重定向
+        if (noRedirect) {
+            return;
+        }
+        
+        // 检查当前是否已经登录
+        if (localStorage.getItem('blockchain_auth_status') === 'authenticated') {
+            // 获取重定向URL参数，如果没有则默认到index.html
+            const redirectUrl = urlParams.get('redirect') || 'index.html';
+            
+            // 显示已登录状态
+            messageArea.textContent = '您已经登录，正在跳转...';
+            messageArea.className = 'mt-6 text-center text-sm text-green-600';
+            
+            // 检查是否可能陷入循环重定向
+            const redirectCount = parseInt(localStorage.getItem('redirect_count') || '0');
+            if (redirectCount > 5) {
+                // 重置重定向计数器
+                localStorage.setItem('redirect_count', '0');
+                // 显示错误提示
+                messageArea.textContent = '检测到循环重定向。请尝试清除浏览器缓存或手动登录。';
+                messageArea.className = 'mt-6 text-center text-sm text-red-600';
+                // 显示循环重定向警告
+                document.getElementById('redirectWarning').classList.remove('hidden');
+                return;
+            }
+            
+            // 增加重定向计数
+            localStorage.setItem('redirect_count', (redirectCount + 1).toString());
+            
+            // 跳转到目标页面
+            setTimeout(() => {
+                window.location.href = redirectUrl;
+            }, 1000);
+        } else {
+            // 重置重定向计数器
+            localStorage.setItem('redirect_count', '0');
+        }
+        
+        // 处理重置认证状态按钮
+        document.getElementById('resetAuthButton').addEventListener('click', function() {
+            localStorage.removeItem('blockchain_auth_status');
+            localStorage.removeItem('blockchain_auth_token');
+            localStorage.removeItem('blockchain_auth_did');
+            localStorage.removeItem('blockchain_auth_type');
+            localStorage.removeItem('blockchain_auth_session');
+            localStorage.removeItem('redirect_count');
+            
+            alert('已重置认证状态，页面将刷新');
+            window.location.href = 'login.html?no_redirect=true';
+        });
+
+        // 检查是否有循环重定向的迹象
+        const redirectCount = parseInt(localStorage.getItem('redirect_count') || '0');
+        if (redirectCount > 3) {
+            // 显示重定向警告
+            document.getElementById('redirectWarning').classList.remove('hidden');
+        }
+    });
+</script>
 
 <script>
     // --- DOM 元素获取 ---
@@ -980,13 +1080,22 @@
                 localStorage.setItem('blockchain_auth_token', result.token || 'authenticated');
                 localStorage.setItem('blockchain_auth_did', currentActiveDid);
                 localStorage.setItem('blockchain_auth_session', result.sessionId || '');
+                localStorage.setItem('blockchain_auth_type', 'did');
                 
                 // 设置认证标志
                 localStorage.setItem('blockchain_auth_status', 'authenticated');
                 
                 messageArea.textContent = '登录成功！正在跳转...';
                 messageArea.classList.add('text-green-600');
-                setTimeout(() => { window.location.href = 'BlockChain.html'; }, 1500);
+                
+                // 获取重定向URL参数，如果没有则默认到index.html
+                const urlParams = new URLSearchParams(window.location.search);
+                const redirectUrl = urlParams.get('redirect') || 'index.html';
+                
+                // 使用一个短暂的延迟确保本地存储完成
+                setTimeout(() => { 
+                    window.location.href = redirectUrl; 
+                }, 500);
             } else {
                 throw new Error(result.message || '验证失败');
             }
@@ -1112,7 +1221,15 @@
                 
                 messageArea.textContent = '登录成功！正在跳转...';
                 messageArea.classList.add('text-green-600');
-                setTimeout(() => { window.location.href = 'BlockChain.html'; }, 1500);
+                
+                // 获取重定向URL参数，如果没有则默认到index.html
+                const urlParams = new URLSearchParams(window.location.search);
+                const redirectUrl = urlParams.get('redirect') || 'index.html';
+                
+                // 使用一个短暂的延迟确保本地存储完成
+                setTimeout(() => { 
+                    window.location.href = redirectUrl; 
+                }, 500);
             } else {
                 throw new Error(result.message || '验证失败');
             }

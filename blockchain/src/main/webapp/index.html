@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链投票系统 - 首页</title>
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+    <style>
+        .feature-box {
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            transition: all 0.3s ease;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .feature-box:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+        }
+        
+        .auth-status {
+            font-weight: 500;
+        }
+        
+        .hero-section {
+            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+            color: white;
+            padding: 4rem 0;
+        }
+        
+        .progress-container {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        
+        .progress-bar {
+            height: 4px;
+            background-color: #4e73df;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <!-- 进度条 -->
+    <div class="progress-container">
+        <div class="progress-bar" id="pageLoadProgress"></div>
+    </div>
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">区块链投票系统</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav mr-auto">
+                    <li class="nav-item active">
+                        <a class="nav-link" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="BlockChain.html">区块链信息</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="elections.html">选举列表</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="create-election.html">创建选举</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="my-votes.html">我的投票</a>
+                    </li>
+                </ul>
+                <div class="navbar-text" id="userInfo">
+                    <span class="auth-status">未登录</span>
+                </div>
+                <button class="btn btn-outline-light ml-2" id="loginBtn">登录</button>
+                <button class="btn btn-outline-light ml-2 d-none" id="logoutBtn">退出</button>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero-section">
+        <div class="container text-center">
+            <h1 class="display-4 mb-3">区块链投票系统</h1>
+            <p class="lead mb-4">基于区块链技术的安全、透明、不可篡改的投票平台</p>
+            <div>
+                <a href="elections.html" class="btn btn-light btn-lg mr-2">浏览选举</a>
+                <a href="create-election.html" class="btn btn-outline-light btn-lg">创建选举</a>
+            </div>
+        </div>
+    </section>
+
+    <div class="container mt-5">
+        <div class="alert alert-info alert-dismissible fade show" role="alert" id="optimizationTips">
+            <h5 class="alert-heading">性能优化提示</h5>
+            <p>为了提高系统性能，我们建议：</p>
+            <ul>
+                <li>系统现已启用本地数据缓存，减少服务器请求</li>
+                <li>首次加载后，页面切换速度将显著提升</li>
+                <li>如遇性能问题，请尝试清除浏览器缓存后重试</li>
+            </ul>
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+        </div>
+
+        <h2 class="text-center mb-4">功能与特点</h2>
+        
+        <div class="row">
+            <div class="col-md-4">
+                <div class="feature-box bg-light">
+                    <h3 class="h4 mb-3 text-primary">安全透明</h3>
+                    <p>基于区块链技术，确保投票过程的透明性和不可篡改性。所有投票将被记录在区块链上，可供公开验证。</p>
+                    <a href="BlockChain.html" class="btn btn-sm btn-primary">查看区块链数据</a>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="feature-box bg-light">
+                    <h3 class="h4 mb-3 text-primary">匿名投票</h3>
+                    <p>支持匿名身份验证，保护投票者隐私。投票者可以完全匿名参与投票过程，同时确保每人只能投票一次。</p>
+                    <a href="login.html" class="btn btn-sm btn-primary">身份验证</a>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="feature-box bg-light">
+                    <h3 class="h4 mb-3 text-primary">实时结果</h3>
+                    <p>实时查看投票结果和统计数据。投票结束后，所有结果将被自动计算并显示，确保选举结果准确可靠。</p>
+                    <a href="elections.html" class="btn btn-sm btn-primary">浏览选举</a>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="text-center my-4">最新活动</h2>
+        <div class="row" id="activeElectionsContainer">
+            <div class="col-12 text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <p>加载中...</p>
+            </div>
+        </div>
+
+        <div class="text-center mt-4 mb-5">
+            <a href="elections.html" class="btn btn-outline-primary btn-lg">查看所有选举</a>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white mt-5 py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>区块链投票系统</h5>
+                    <p>基于区块链技术的安全透明投票平台</p>
+                </div>
+                <div class="col-md-3">
+                    <h5>快速链接</h5>
+                    <ul class="list-unstyled">
+                        <li><a href="elections.html" class="text-white">选举列表</a></li>
+                        <li><a href="create-election.html" class="text-white">创建选举</a></li>
+                        <li><a href="my-votes.html" class="text-white">我的投票</a></li>
+                    </ul>
+                </div>
+                <div class="col-md-3">
+                    <h5>资源</h5>
+                    <ul class="list-unstyled">
+                        <li><a href="BlockChain.html" class="text-white">区块链信息</a></li>
+                        <li><a href="login.html" class="text-white">身份认证</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="text-center mt-3">
+                <p class="small mb-0">© 2023 区块链投票系统 | 技术支持: 区块链团队</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/js/bootstrap.bundle.min.js"></script>
+    <script src="js/auth-helper.js"></script>
+    <script src="js/election-helper.js"></script>
+    <script>
+        // 页面加载进度条
+        $(document).ready(function() {
+            const progressBar = document.getElementById('pageLoadProgress');
+            
+            // 模拟页面加载进度
+            let width = 0;
+            const interval = setInterval(frame, 10);
+            
+            function frame() {
+                if (width >= 100) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        progressBar.style.width = '0%'; 
+                    }, 500);
+                } else {
+                    width++;
+                    progressBar.style.width = width + '%';
+                }
+            }
+            
+            // 更新登录状态
+            updateLoginStatus();
+            
+            // 加载活动选举
+            loadActiveElections();
+            
+            // 登录/登出按钮
+            $('#loginBtn').click(function() {
+                window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.href);
+            });
+            
+            $('#logoutBtn').click(function() {
+                AuthHelper.logout();
+                updateLoginStatus();
+            });
+            
+            // 更新登录状态UI
+            function updateLoginStatus() {
+                if (AuthHelper.isAuthenticated()) {
+                    const did = AuthHelper.getCurrentDid();
+                    $('#userInfo').html(`<span class="auth-status">已登录: ${did ? did.substring(0, 8) + '...' : '用户'}</span>`);
+                    $('#loginBtn').addClass('d-none');
+                    $('#logoutBtn').removeClass('d-none');
+                } else {
+                    $('#userInfo').html('<span class="auth-status">未登录</span>');
+                    $('#loginBtn').removeClass('d-none');
+                    $('#logoutBtn').addClass('d-none');
+                }
+            }
+            
+            // 加载活动选举
+            function loadActiveElections() {
+                const electionHelper = new ElectionHelper();
+                
+                electionHelper.getActiveElections()
+                    .then(elections => {
+                        if (!elections || elections.length === 0) {
+                            $('#activeElectionsContainer').html('<div class="col-12 text-center"><p>当前没有进行中的选举</p></div>');
+                            return;
+                        }
+                        
+                        // 最多显示3个活动选举
+                        const displayedElections = elections.slice(0, 3);
+                        
+                        let html = '';
+                        displayedElections.forEach(election => {
+                            html += `
+                                <div class="col-md-4 mb-4">
+                                    <div class="card h-100">
+                                        <div class="card-body">
+                                            <h5 class="card-title">${election.title}</h5>
+                                            <p class="card-text">${election.description.substring(0, 100)}${election.description.length > 100 ? '...' : ''}</p>
+                                        </div>
+                                        <div class="card-footer bg-white border-top-0">
+                                            <a href="election-detail.html?id=${election.electionId}" class="btn btn-primary btn-sm">查看详情</a>
+                                            <span class="badge badge-success float-right mt-1">进行中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        $('#activeElectionsContainer').html(html);
+                    })
+                    .catch(error => {
+                        console.error('加载选举失败:', error);
+                        $('#activeElectionsContainer').html(`
+                            <div class="col-12">
+                                <div class="alert alert-warning">
+                                    加载选举数据失败: ${error.message || '未知错误'}
+                                </div>
+                            </div>
+                        `);
+                    });
+            }
+            
+            // 添加浏览器缓存信息
+            if (window.performance) {
+                const perfData = window.performance.timing;
+                const pageLoadTime = perfData.loadEventEnd - perfData.navigationStart;
+                
+                // 只有在页面非首次加载时才显示信息
+                if (performance.navigation.type === 1 || localStorage.getItem('visited')) {
+                    const loadInfoElement = document.createElement('div');
+                    loadInfoElement.className = 'text-center mb-3 small text-muted';
+                    loadInfoElement.innerHTML = `页面加载用时: ${Math.round(pageLoadTime / 10) / 100} 秒`;
+                    
+                    document.querySelector('.hero-section .container').appendChild(loadInfoElement);
+                }
+                
+                // 记录用户已访问
+                localStorage.setItem('visited', 'true');
+            }
+        });
+    </script>
+</body>
+</html> 

@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>区块链操作页面</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 添加Bootstrap样式 -->
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
     <!-- 添加认证和区块链帮助脚本 -->
     <script src="js/auth-helper.js"></script>
     <script src="js/blockchain-helper.js"></script>
@@ -15,9 +17,13 @@
             "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
             "Segoe UI Symbol", "Noto Color Emoji";
             margin: 0;
-            padding: 20px;
+            padding: 0; /* 移除内边距，让导航栏能够全宽显示 */
             background-color: #f3f4f6;
             color: #1f2937;
+        }
+        /* 导航栏样式 */
+        .navbar {
+            margin-bottom: 20px;
         }
         .container {
             max-width: 1100px;
@@ -236,6 +242,38 @@
 </head>
 
 <body class="antialiased">
+<!-- 添加导航栏 -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid px-4">
+        <a class="navbar-brand" href="index.html">区块链投票系统</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav mr-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="index.html">首页</a>
+                </li>
+                <li class="nav-item active">
+                    <a class="nav-link" href="BlockChain.html">区块链信息</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="elections.html">选举列表</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="create-election.html">创建选举</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="my-votes.html">我的投票</a>
+                </li>
+            </ul>
+            <div class="navbar-text mr-2" id="navbarUserInfo">
+                未登录
+            </div>
+        </div>
+    </div>
+</nav>
+
 <div class="container">
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-gray-900">区块链交互操作界面</h1>
@@ -506,6 +544,8 @@
     // 登出按钮
     logoutButton.addEventListener('click', () => {
         AuthHelper.logout();
+        // 添加重定向到登录页面
+        window.location.href = 'login.html';
     });
 
     // 创建新DID按钮
@@ -1033,8 +1073,69 @@
         }
     });
 
+    // 更新用户状态UI
+    function updateUserStatusUI() {
+        userAuthStatusDiv.classList.remove('status-did', 'status-anonymous', 'status-none');
+        
+        if (currentUserAuth.isAuthenticated) {
+            if (currentUserAuth.authType === 'did') {
+                userAuthStatusDiv.classList.add('status-did');
+                userAuthStatusDiv.innerHTML = `已通过DID认证: <strong>${currentUserAuth.identifier}</strong>`;
+                // 同时更新导航栏用户信息
+                document.getElementById('navbarUserInfo').textContent = `已登录: ${currentUserAuth.identifier.substring(0, 8)}...`;
+            } else {
+                userAuthStatusDiv.classList.add('status-anonymous');
+                userAuthStatusDiv.innerHTML = `匿名访问模式 (受限功能)`;
+                // 同时更新导航栏用户信息
+                document.getElementById('navbarUserInfo').textContent = '匿名访问';
+            }
+            logoutButton.style.display = 'block';
+        } else {
+            userAuthStatusDiv.classList.add('status-none');
+            userAuthStatusDiv.innerHTML = `未认证 - 请先<a href="login.html" class="text-blue-500 underline">登录</a>或<button id="createDidBtn" class="text-blue-600 underline">创建DID身份</button>`;
+            document.getElementById('createDidBtn').addEventListener('click', function() {
+                getCertificateBtn.click();
+            });
+            // 同时更新导航栏用户信息
+            document.getElementById('navbarUserInfo').textContent = '未登录';
+            logoutButton.style.display = 'none';
+            
+            // 如果未登录，延迟2秒后跳转到登录页面
+            setTimeout(() => {
+                window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.href);
+            }, 2000);
+        }
+        
+        // 同步按钮状态
+        getCertificateBtn.disabled = !currentUserAuth.isAuthenticated || currentUserAuth.authType !== 'did';
+        openDidUpdateModalBtn.disabled = !currentUserAuth.isAuthenticated || currentUserAuth.authType !== 'did';
+    }
+
     // 在页面加载完成后初始化
     document.addEventListener('DOMContentLoaded', initApp);
 </script>
-    </body>
-    </html>
+
+<!-- 添加Bootstrap相关脚本 -->
+<script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+<script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/js/bootstrap.bundle.min.js"></script>
+
+<!-- 添加导航功能脚本 -->
+<script>
+    // 确保导航链接正常工作
+    document.addEventListener('DOMContentLoaded', function() {
+        // 获取所有导航链接
+        const navLinks = document.querySelectorAll('.navbar-nav a.nav-link');
+        
+        // 为每个链接添加点击事件处理
+        navLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (href) {
+                    window.location.href = href;
+                }
+            });
+        });
+    });
+</script>
+</body>
+</html>

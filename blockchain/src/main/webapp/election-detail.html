@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链投票系统 - 选举详情</title>
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+    <style>
+        .candidate-card {
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .candidate-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .candidate-card.selected {
+            border: 2px solid #007bff;
+            box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+        }
+        .candidate-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 5px 5px 0 0;
+        }
+        .candidate-card .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">区块链投票系统</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav mr-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="BlockChain.html">区块链信息</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="elections.html">选举列表</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="create-election.html">创建选举</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="my-votes.html">我的投票</a>
+                    </li>
+                </ul>
+                <div class="navbar-text" id="userInfo">
+                    未登录
+                </div>
+                <button class="btn btn-outline-light ml-2" id="loginBtn">登录</button>
+                <button class="btn btn-outline-light ml-2 d-none" id="logoutBtn">退出</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div id="loadingArea" class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="sr-only">Loading...</span>
+            </div>
+            <p class="mt-2">正在加载选举详情...</p>
+        </div>
+
+        <div id="electionDetailArea" class="d-none">
+            <div class="row mb-4">
+                <div class="col-md-8">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="elections.html">选举列表</a></li>
+                            <li class="breadcrumb-item active" aria-current="page" id="electionTitle">选举详情</li>
+                        </ol>
+                    </nav>
+                    <h2 id="electionTitleHeading">选举标题</h2>
+                </div>
+                <div class="col-md-4 text-right align-self-center">
+                    <span class="badge p-2" id="statusBadge">状态</span>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">选举详情</h5>
+                        </div>
+                        <div class="card-body">
+                            <p id="electionDescription">选举描述</p>
+                            <div class="d-flex justify-content-between text-muted small">
+                                <div>开始时间：<span id="startTime"></span></div>
+                                <div>结束时间：<span id="endTime"></span></div>
+                            </div>
+                            <hr>
+                            <div id="electionRules" class="mt-3">
+                                <h6>选举规则：</h6>
+                                <p id="rulesContent">规则内容</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">候选人</h5>
+                            <span id="candidatesCount" class="badge badge-info">0 人</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row" id="candidatesList">
+                                <!-- 候选人卡片将在这里动态加载 -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mb-4 d-none" id="voteFormArea">
+                        <div class="card-header">
+                            <h5 class="mb-0">投票</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info" role="alert">
+                                您选择了：<strong id="selectedCandidateName">未选择</strong>
+                            </div>
+                            <form id="voteForm">
+                                <div class="form-group">
+                                    <label for="additionalInfo">附加信息（选填）</label>
+                                    <textarea class="form-control" id="additionalInfo" rows="2" placeholder="可以添加投票理由或其他说明"></textarea>
+                                </div>
+                                <div class="text-center mt-4">
+                                    <button type="submit" class="btn btn-primary" id="voteSubmitBtn" disabled>
+                                        提交投票
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">实时投票结果</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="loadingResults" class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                    <span class="sr-only">Loading...</span>
+                                </div>
+                                <p class="mb-0 mt-2">正在加载投票结果...</p>
+                            </div>
+                            <div id="voteResults" class="d-none">
+                                <canvas id="resultsChart"></canvas>
+                                <div class="mt-3" id="resultsList">
+                                    <!-- 投票结果将在这里动态加载 -->
+                                </div>
+                                <div class="text-center mt-3">
+                                    <button class="btn btn-sm btn-outline-primary" id="refreshResultsBtn">
+                                        <i class="fas fa-sync-alt"></i> 刷新结果
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="noResults" class="text-center py-3 d-none">
+                                <p class="text-muted mb-0">还没有投票数据</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">选举信息</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-1"><strong>选举ID：</strong> <span id="electionId" class="text-muted"></span></p>
+                            <p class="mb-1"><strong>创建者：</strong> <span id="creatorId" class="text-muted"></span></p>
+                            <p class="mb-0"><strong>区块链状态：</strong> <span id="blockchainStatus" class="text-muted">未记录</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="errorArea" class="d-none">
+            <div class="alert alert-danger" role="alert">
+                <h4 class="alert-heading">加载失败</h4>
+                <p id="errorMessage">无法加载选举详情。</p>
+                <hr>
+                <p class="mb-0">
+                    <button class="btn btn-outline-danger" id="retryBtn">
+                        <i class="fas fa-redo"></i> 重试
+                    </button>
+                    <a href="elections.html" class="btn btn-outline-primary ml-2">
+                        <i class="fas fa-arrow-left"></i> 返回选举列表
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 投票成功模态框 -->
+    <div class="modal fade" id="voteSuccessModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title">投票成功</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>您的投票已成功提交到区块链系统，并将在下一个区块被打包确认。</p>
+                    <p>投票详情：</p>
+                    <ul>
+                        <li>选举：<span id="modalElectionTitle"></span></li>
+                        <li>候选人：<span id="modalCandidateName"></span></li>
+                        <li>投票ID：<span id="modalVoteId"></span></li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+                    <a href="elections.html" class="btn btn-primary">返回选举列表</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 投票失败模态框 -->
+    <div class="modal fade" id="voteErrorModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">投票失败</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>很抱歉，投票提交失败。</p>
+                    <p>错误信息：<span id="voteErrorMessage"></span></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+                    <button type="button" class="btn btn-primary" id="modalRetryBtn">重试</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.3/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/font-awesome/5.15.1/js/all.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/2.9.4/Chart.min.js"></script>
+    <script src="js/auth-helper.js"></script>
+    <script src="js/election-helper.js"></script>
+    <script src="js/blockchain-helper.js"></script>
+    <script>
+        $(document).ready(function() {
+            const electionHelper = new ElectionHelper();
+            const blockchainHelper = new BlockchainHelper();
+            
+            let currentElection = null;
+            let selectedCandidateId = null;
+            let resultsChart = null;
+            
+            // 获取URL参数中的选举ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const electionId = urlParams.get('id');
+            
+            if (!electionId) {
+                showError("未指定选举ID，无法加载选举详情");
+                return;
+            }
+            
+            // 检查登录状态
+            updateLoginStatus();
+            
+            // 加载选举详情
+            loadElectionDetails();
+            
+            // 定期刷新投票结果
+            const resultRefreshInterval = setInterval(() => {
+                if ($('#voteResults').is(':visible')) {
+                    loadVoteResults();
+                }
+            }, 30000); // 每30秒刷新一次
+            
+            // 登录/登出按钮
+            $('#loginBtn').click(function() {
+                window.location.href = `login.html?redirect=${encodeURIComponent(window.location.href)}`;
+            });
+            
+            $('#logoutBtn').click(function() {
+                AuthHelper.logout();
+                updateLoginStatus();
+            });
+            
+            // 刷新结果按钮
+            $('#refreshResultsBtn').click(loadVoteResults);
+            
+            // 重试按钮
+            $('#retryBtn').click(loadElectionDetails);
+            
+            // 投票表单提交
+            $('#voteForm').submit(function(e) {
+                e.preventDefault();
+                
+                if (!AuthHelper.isAuthenticated()) {
+                    $('#loginBtn').click();
+                    return;
+                }
+                
+                if (!selectedCandidateId) {
+                    alert('请选择一名候选人');
+                    return;
+                }
+                
+                submitVote();
+            });
+            
+            // 模态框重试按钮
+            $('#modalRetryBtn').click(function() {
+                $('#voteErrorModal').modal('hide');
+                submitVote();
+            });
+            
+            // 更新登录状态UI
+            function updateLoginStatus() {
+                if (AuthHelper.isAuthenticated()) {
+                    const did = AuthHelper.getCurrentDid();
+                    $('#userInfo').text(`你好，${did ? did.substring(0, 8) + '...' : '用户'}`);
+                    $('#loginBtn').addClass('d-none');
+                    $('#logoutBtn').removeClass('d-none');
+                } else {
+                    $('#userInfo').text('未登录');
+                    $('#loginBtn').removeClass('d-none');
+                    $('#logoutBtn').addClass('d-none');
+                }
+            }
+            
+            // 加载选举详情
+            function loadElectionDetails() {
+                $('#loadingArea').removeClass('d-none');
+                $('#electionDetailArea').addClass('d-none');
+                $('#errorArea').addClass('d-none');
+                
+                electionHelper.getElectionById(electionId)
+                    .then(election => {
+                        currentElection = election;
+                        displayElectionDetails(election);
+                        loadVoteResults();
+                    })
+                    .catch(error => {
+                        console.error('加载选举详情失败:', error);
+                        showError(`加载选举详情失败: ${error.message || '未知错误'}`);
+                    });
+            }
+            
+            // 显示选举详情
+            function displayElectionDetails(election) {
+                // 基本信息
+                $('#electionTitle').text(election.title);
+                $('#electionTitleHeading').text(election.title);
+                $('#electionDescription').text(election.description);
+                $('#startTime').text(formatDate(election.startTime));
+                $('#endTime').text(formatDate(election.endTime));
+                $('#electionId').text(election.electionId);
+                $('#creatorId').text(election.creatorId || '未知');
+                
+                // 规则
+                if (election.rules) {
+                    $('#rulesContent').text(election.rules);
+                } else {
+                    $('#electionRules').html('<p class="text-muted">没有特定规则</p>');
+                }
+                
+                // 状态标签
+                const statusBadge = $('#statusBadge');
+                statusBadge.removeClass('badge-success badge-warning badge-secondary');
+                
+                if (election.status === '进行中') {
+                    statusBadge.addClass('badge-success').text('进行中');
+                    // 显示投票表单
+                    $('#voteFormArea').removeClass('d-none');
+                } else if (election.status === '未开始') {
+                    statusBadge.addClass('badge-warning').text('未开始');
+                    // 隐藏投票表单
+                    $('#voteFormArea').addClass('d-none');
+                } else {
+                    statusBadge.addClass('badge-secondary').text('已结束');
+                    // 隐藏投票表单
+                    $('#voteFormArea').addClass('d-none');
+                }
+                
+                // 候选人列表
+                displayCandidates(election.candidates || []);
+                
+                // 显示详情区域
+                $('#loadingArea').addClass('d-none');
+                $('#electionDetailArea').removeClass('d-none');
+            }
+            
+            // 显示候选人列表
+            function displayCandidates(candidates) {
+                const candidatesCount = candidates.length;
+                $('#candidatesCount').text(`${candidatesCount} 人`);
+                
+                if (candidatesCount === 0) {
+                    $('#candidatesList').html('<div class="col-12"><p class="text-center text-muted">没有候选人</p></div>');
+                    return;
+                }
+                
+                $('#candidatesList').empty();
+                
+                candidates.forEach(candidate => {
+                    const candidateCard = `
+                        <div class="col-md-4 mb-4">
+                            <div class="card candidate-card" data-id="${candidate.candidateId}">
+                                <img src="${candidate.imageUrl || 'https://via.placeholder.com/300x200?text=候选人'}" 
+                                     class="candidate-image" alt="${candidate.name}">
+                                <div class="card-body">
+                                    <h5 class="card-title">${candidate.name}</h5>
+                                    <p class="card-text">${candidate.profile || '没有简介'}</p>
+                                </div>
+                                <div class="card-footer bg-transparent">
+                                    <button class="btn btn-sm btn-primary select-candidate-btn">选择</button>
+                                    <span class="vote-count" data-id="${candidate.candidateId}">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    $('#candidatesList').append(candidateCard);
+                });
+                
+                // 候选人卡片点击事件
+                $('.candidate-card').click(function() {
+                    if (currentElection.status !== '进行中') return;
+                    
+                    selectedCandidateId = $(this).data('id');
+                    
+                    // 高亮选中的候选人
+                    $('.candidate-card').removeClass('selected');
+                    $(this).addClass('selected');
+                    
+                    // 更新选中候选人名称
+                    const candidateName = $(this).find('.card-title').text();
+                    $('#selectedCandidateName').text(candidateName);
+                    
+                    // 启用提交按钮
+                    $('#voteSubmitBtn').prop('disabled', false);
+                });
+            }
+            
+            // 加载投票结果
+            function loadVoteResults() {
+                $('#loadingResults').removeClass('d-none');
+                $('#voteResults').addClass('d-none');
+                $('#noResults').addClass('d-none');
+                
+                electionHelper.getVoteCountsByElection(electionId)
+                    .then(results => {
+                        if (Object.keys(results).length === 0) {
+                            $('#loadingResults').addClass('d-none');
+                            $('#noResults').removeClass('d-none');
+                            return;
+                        }
+                        
+                        displayVoteResults(results);
+                    })
+                    .catch(error => {
+                        console.error('加载投票结果失败:', error);
+                        $('#loadingResults').addClass('d-none');
+                        $('#noResults').removeClass('d-none')
+                            .html(`<p class="text-danger">加载投票结果失败: ${error.message || '未知错误'}</p>`);
+                    });
+            }
+            
+            // 显示投票结果
+            function displayVoteResults(results) {
+                $('#loadingResults').addClass('d-none');
+                $('#voteResults').removeClass('d-none');
+                
+                // 准备图表数据
+                const candidateNames = [];
+                const voteCounts = [];
+                const backgroundColors = [];
+                
+                let totalVotes = 0;
+                
+                // 更新候选人卡片上的票数
+                $('.vote-count').text('0 票');
+                
+                // 处理结果数据
+                Object.entries(results).forEach(([candidateId, count]) => {
+                    // 查找候选人名称
+                    const candidate = currentElection.candidates.find(c => c.candidateId === candidateId);
+                    const candidateName = candidate ? candidate.name : `候选人 ${candidateId}`;
+                    
+                    candidateNames.push(candidateName);
+                    voteCounts.push(count);
+                    
+                    // 生成随机颜色
+                    const randomColor = `rgba(${Math.floor(Math.random() * 200)}, ${Math.floor(Math.random() * 200)}, ${Math.floor(Math.random() * 200)}, 0.7)`;
+                    backgroundColors.push(randomColor);
+                    
+                    totalVotes += count;
+                    
+                    // 更新候选人卡片上的票数
+                    $(`.vote-count[data-id="${candidateId}"]`).text(`${count} 票`);
+                });
+                
+                // 更新结果列表
+                $('#resultsList').empty();
+                Object.entries(results).forEach(([candidateId, count], index) => {
+                    const candidate = currentElection.candidates.find(c => c.candidateId === candidateId);
+                    const candidateName = candidate ? candidate.name : `候选人 ${candidateId}`;
+                    const percentage = totalVotes > 0 ? ((count / totalVotes) * 100).toFixed(1) : 0;
+                    
+                    const resultItem = `
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <span class="badge" style="background-color:${backgroundColors[index]};">&nbsp;</span>
+                                ${candidateName}
+                            </div>
+                            <div>
+                                <strong>${count}</strong> 票 (${percentage}%)
+                            </div>
+                        </div>
+                    `;
+                    
+                    $('#resultsList').append(resultItem);
+                });
+                
+                // 创建或更新图表
+                const ctx = document.getElementById('resultsChart').getContext('2d');
+                
+                if (resultsChart) {
+                    resultsChart.data.labels = candidateNames;
+                    resultsChart.data.datasets[0].data = voteCounts;
+                    resultsChart.data.datasets[0].backgroundColor = backgroundColors;
+                    resultsChart.update();
+                } else {
+                    resultsChart = new Chart(ctx, {
+                        type: 'pie',
+                        data: {
+                            labels: candidateNames,
+                            datasets: [{
+                                data: voteCounts,
+                                backgroundColor: backgroundColors
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    boxWidth: 12
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            
+            // 提交投票
+            function submitVote() {
+                if (!AuthHelper.isAuthenticated()) {
+                    $('#loginBtn').click();
+                    return;
+                }
+                
+                const voterId = AuthHelper.getCurrentDid();
+                
+                // 准备投票数据
+                const voteData = {
+                    electionId: electionId,
+                    candidateId: selectedCandidateId,
+                    voterId: voterId,
+                    timestamp: new Date().getTime()
+                };
+                
+                // 显示加载状态
+                $('#voteSubmitBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 提交中...');
+                
+                // 提交投票
+                electionHelper.castVote(voteData)
+                    .then(response => {
+                        console.log('投票成功:', response);
+                        
+                        // 显示成功模态框
+                        $('#voteSuccessModal').modal('show');
+                        
+                        // 刷新投票结果
+                        loadVoteResults();
+                        
+                        // 重置按钮状态
+                        $('#voteSubmitBtn').prop('disabled', false).text('提交投票');
+                        
+                        // 重置选择
+                        selectedCandidateId = null;
+                        $('.candidate-card').removeClass('selected');
+                    })
+                    .catch(error => {
+                        console.error('投票失败:', error);
+                        
+                        // 显示错误模态框
+                        $('#voteErrorMessage').text(error.message || '投票提交过程中发生未知错误');
+                        $('#voteErrorModal').modal('show');
+                        
+                        // 重置按钮状态
+                        $('#voteSubmitBtn').prop('disabled', false).text('提交投票');
+                    });
+            }
+            
+            // 显示错误信息
+            function showError(message) {
+                $('#loadingArea').addClass('d-none');
+                $('#electionDetailArea').addClass('d-none');
+                $('#errorArea').removeClass('d-none');
+                $('#errorMessage').text(message);
+            }
+            
+            // 格式化日期
+            function formatDate(timestamp) {
+                const date = new Date(timestamp);
+                return date.toLocaleDateString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+            
+            // 在页面关闭前清除定时器
+            $(window).on('beforeunload', function() {
+                clearInterval(resultRefreshInterval);
+            });
+        });
+    </script>
+</body>
+</html> 
